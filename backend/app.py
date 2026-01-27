@@ -835,6 +835,9 @@ async def chat(req: ChatRequest):
                     tool_results.append({"tool": tool_name, "args": tool_args, "error": str(e)})
 
         # ===== Phase 3: Final Answer =====
+        # If no tools were called, AI decided it can answer directly (general question)
+        # Otherwise, AI must answer based on tool results ONLY
+        
         final_answer_messages = [{"role": "system", "content": SYSTEM_PROMPT_FINAL_ANSWER}]
         
         # Add history
@@ -844,7 +847,13 @@ async def chat(req: ChatRequest):
                 final_answer_messages.append({"role": role, "content": m.get("content", "")})
         
         # Add current user message + tool results
-        user_content_with_tools = f"User: {user_msg}\n\nTool Results:\n{json.dumps(tool_results, ensure_ascii=False, indent=2)}"
+        if tool_results:
+            # Tool results available - AI MUST cite these
+            user_content_with_tools = f"User question: {user_msg}\n\n=== TOOL RESULTS (YOU MUST USE THESE) ===\n{json.dumps(tool_results, ensure_ascii=False, indent=2)}\n\nAnswer the question using ONLY the information from tool results above. Do NOT fabricate."
+        else:
+            # No tools called - general question
+            user_content_with_tools = f"User question: {user_msg}\n\n(No tool results - this is a general question. Answer directly.)"
+        
         final_answer_messages.append({"role": "user", "content": user_content_with_tools})
 
         resp2 = call_openai_compatible(

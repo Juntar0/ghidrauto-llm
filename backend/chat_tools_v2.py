@@ -248,13 +248,26 @@ TOOL_DESCRIPTIONS = """
     - Returns: `{"status": "saved", "target": "..."}`
     - Use when: User wants to save observations
 
+## CRITICAL: ID Management Rules
+
+**NEVER fabricate function_id or address!**
+- If user mentions a function by name (e.g., "main"), use `search_functions` first to find its function_id
+- Only use function_ids that appear in tool results
+- Example flow: search_functions → get function_id from result → use in get_function_code
+
 ## Usage Examples
 
 **User: "mainっぽい関数を探して"**
 → `{"tool_calls": [{"tool": "search_functions", "args": {"query": "main"}}]}`
+(Do NOT assume function_id - search first!)
 
 **User: "FUN_00401000のコードを見せて"**
 → `{"tool_calls": [{"tool": "get_function_code", "args": {"function_id": "FUN_00401000", "view": "decompiler"}}]}`
+(User provided exact function_id - OK to use directly)
+
+**User: "main関数のコードを見せて"**
+→ Step 1: `{"tool_calls": [{"tool": "search_functions", "args": {"query": "main"}}]}`
+→ Step 2 (after getting result): Use function_id from search result
 
 **User: "このバイナリは何？"**
 → `{"tool_calls": [{"tool": "get_job_summary", "args": {}}]}`
