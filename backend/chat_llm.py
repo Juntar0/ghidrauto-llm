@@ -45,7 +45,7 @@ def call_openai_compatible(
 
 
 def build_messages(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    # history entries: {role, content}
+    # OpenAI-compatible messages
     msgs: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     for m in history:
         role = (m.get("role") or "").strip()
@@ -59,3 +59,51 @@ def build_messages(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
             msg["name"] = m["name"]
         msgs.append(msg)
     return msgs
+
+
+def call_anthropic_messages(
+    *,
+    api_key: str,
+    model: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    max_tokens: int = 1200,
+    timeout: int = 120,
+) -> dict[str, Any]:
+    url = "https://api.anthropic.com/v1/messages"
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+    }
+
+    payload: dict[str, Any] = {
+        "model": model,
+        "system": SYSTEM_PROMPT,
+        "messages": messages,
+        "max_tokens": max_tokens,
+    }
+    if tools is not None:
+        payload["tools"] = tools
+
+    with httpx.Client(timeout=timeout) as client:
+        r = client.post(url, headers=headers, json=payload)
+        r.raise_for_status()
+        return r.json()
+
+
+def build_anthropic_messages(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build Anthropic 'messages' list.
+
+    We use the block format so we can append tool_result blocks.
+    """
+
+    out: list[dict[str, Any]] = []
+    for m in history:
+        role = (m.get("role") or "").strip()
+        if role not in ("user", "assistant"):
+            # tool results are modeled as user blocks in the tool loop
+            continue
+        content = m.get("content") or ""
+        out.append({"role": role, "content": [{"type": "text", "text": str(content)}]})
+    return out

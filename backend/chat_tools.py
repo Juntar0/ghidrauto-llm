@@ -129,6 +129,21 @@ def available_tools_schema() -> list[dict[str, Any]]:
     ]
 
 
+def available_tools_anthropic() -> list[dict[str, Any]]:
+    # Anthropic tool schema
+    out: list[dict[str, Any]] = []
+    for t in available_tools_schema():
+        fn = (t.get("function") or {})
+        out.append(
+            {
+                "name": fn.get("name"),
+                "description": fn.get("description"),
+                "input_schema": fn.get("parameters") or {"type": "object", "properties": {}},
+            }
+        )
+    return out
+
+
 def dispatch_tool(work_dir: str, job_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
     if name == "search_strings":
         return tool_search_strings(work_dir, job_id, args.get("query", ""), int(args.get("limit", 50) or 50))
