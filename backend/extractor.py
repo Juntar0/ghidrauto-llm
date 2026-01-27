@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -74,3 +75,59 @@ def run_ghidra_extract(
     ap = paths["extract"] / "analysis.json"
     if not ap.exists():
         raise RuntimeError("analysis.json missing after extract; see ghidra.log")
+
+
+def run_capa_analysis(
+    *,
+    work_dir: str,
+    job_id: str,
+    sample_path: Path,
+    timeout_seconds: int = 300,
+) -> None:
+    """Run CAPA malware capability detection and save results to capa.json.
+    
+    Non-fatal: if CAPA is not installed or fails, we skip it (Ghidra results are still valid).
+    """
+    paths = ensure_job_dirs(work_dir, job_id)
+    capa_json = paths["extract"] / "capa.json"
+    
+    # Check if capa is installed
+    try:
+        result = subprocess.run(["which", "capa"], capture_output=True, timeout=5)
+        if result.returncode != 0:
+            # CAPA not installed - skip
+            capa_json.write_text(json.dumps({"error": "capa not installed", "installed": False}))
+            return
+    except Exception:
+        capa_json.write_text(json.dumps({"error": "capa check failed", "installed": False}))
+        return
+    
+    # Run CAPA
+    cmd = [
+        "capa",
+        str(sample_path),
+        "--json",
+        str(capa_json),
+    ]
+    
+    log_path = paths["extract"] / "capa.log"
+    try:
+        with open(log_path, "w", encoding="utf-8", errors="replace") as log:
+            subprocess.run(
+                cmd,
+                check=True,
+                timeout=timeout_seconds,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+            )
+    except subprocess.TimeoutExpired:
+        capa_json.write_text(json.dumps({"error": "capa timeout", "timeout": timeout_seconds}))
+    except subprocess.CalledProcessError as e:
+        # CAPA failed (possibly unsupported file format)
+        capa_json.write_text(json.dumps({"error": f"capa failed with exit code {e.returncode}"}))
+    except Exception as e:
+        capa_json.write_text(json.dumps({"error": str(e)}))
+    
+    # Verify output exists
+    if not capa_json.exists():
+        capa_json.write_text(json.dumps({"error": "capa.json not created"}))

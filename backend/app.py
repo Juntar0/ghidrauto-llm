@@ -18,7 +18,7 @@ from starlette.responses import Response
 from sse_starlette.sse import EventSourceResponse
 
 from .config import load_settings
-from .extractor import run_ghidra_extract
+from .extractor import run_capa_analysis, run_ghidra_extract
 from .pecheck import looks_like_pe
 from .storage import (
     ensure_job_dirs,
@@ -182,6 +182,18 @@ def _run_extract(job_id: str, sample_path: Path, *, force: bool = False) -> None
             analyze_headless=settings.ghidra_analyze_headless,
             scripts_dir=settings.ghidra_scripts_dir,
         )
+        
+        # Run CAPA (non-fatal if it fails)
+        try:
+            run_capa_analysis(
+                work_dir=settings.work_dir,
+                job_id=job_id,
+                sample_path=sample_path,
+            )
+        except Exception as capa_err:
+            # CAPA failed - not fatal, log and continue
+            print(f"[extract] CAPA failed for {job_id}: {capa_err}")
+        
         try:
             jst = timezone(timedelta(hours=9))
             write_json_atomic(
@@ -217,6 +229,17 @@ async def get_analysis(job_id: str):
     if not ap.exists():
         return JSONResponse({"status": "analyzing"}, status_code=202)
     return JSONResponse(read_json(ap, {}))
+
+
+@app.get("/api/jobs/{job_id}/capa")
+async def get_capa(job_id: str):
+    """Get CAPA malware capability detection results."""
+    capa_path = Path(settings.work_dir) / job_id / "extract" / "capa.json"
+    if not capa_path.exists():
+        raise HTTPException(404, "CAPA results not found")
+    
+    data = read_json(capa_path, {})
+    return JSONResponse(data)
 
 
 @app.delete("/api/jobs/{job_id}")

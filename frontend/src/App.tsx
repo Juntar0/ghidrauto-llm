@@ -561,6 +561,7 @@ export default function App() {
   const [disasm, setDisasm] = useState<string>('')
   const [ghidraDecomp, setGhidraDecomp] = useState<string>('')
   const [ai, setAi] = useState<AiResult | null>(null)
+  const [capaData, setCapaData] = useState<any>(null)
   const [mainGuess, setMainGuess] = useState<{ function_id: string; reason?: string } | null>(null)
   const [mainGuessError, setMainGuessError] = useState<string | null>(null)
   const [showMainCandidates, setShowMainCandidates] = useState<boolean>(false)
@@ -662,7 +663,7 @@ export default function App() {
   const [recentLoading, setRecentLoading] = useState<boolean>(false)
 
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
-  const [mobileTab, setMobileTab] = useState<'disasm' | 'ghidra' | 'ai'>('disasm')
+  const [mobileTab, setMobileTab] = useState<'disasm' | 'ghidra' | 'ai' | 'capa'>('disasm')
 
   useSSE(jobId || null, setIndex)
 
@@ -975,6 +976,9 @@ export default function App() {
       })?.id
 
     if (entry) navigateTo(entry)
+    
+    // Load CAPA results (non-blocking)
+    loadCapa(id).catch(() => {})
   }
 
   async function loadDisasm(id: string, fid: string) {
@@ -999,6 +1003,20 @@ export default function App() {
       setGhidraDecomp(await r.text())
     } catch {
       setGhidraDecomp('')
+    }
+  }
+
+  async function loadCapa(id: string) {
+    try {
+      const r = await fetch(`${apiBase}/api/jobs/${id}/capa`)
+      if (!r.ok) {
+        setCapaData({ error: 'CAPA results not available' })
+        return
+      }
+      const data = await r.json()
+      setCapaData(data)
+    } catch {
+      setCapaData({ error: 'Failed to load CAPA results' })
     }
   }
 
@@ -2154,6 +2172,13 @@ export default function App() {
               >
                 AI
               </button>
+              <button 
+                className={`smallBtn ${mobileTab === 'capa' ? 'smallBtnActive' : ''}`}
+                style={{ padding: '4px 8px', fontSize: '12px' }}
+                onClick={() => setMobileTab('capa')}
+              >
+                CAPA
+              </button>
             </div>
             {selected && index[selected]?.status === 'ok' ? <span className='badge badgeOk'>Cached</span> : null}
           </div>
@@ -2440,6 +2465,94 @@ export default function App() {
                 <div className='codeBlock'>{ai.error}</div>
               ) : (
                 <div className='secondary'>生成待ち…（Run / Re-run で開始できます）</div>
+              )}
+            </div>
+          </section>
+
+          {/* CAPA */}
+          <section className='pane' style={isMobile && mobileTab !== 'capa' ? { display: 'none' } : undefined}>
+            <div className='paneHeader'>
+              <h4>CAPA</h4>
+              <span className='sub'>Malware Capability Detection</span>
+            </div>
+            <div className='paneBody'>
+              {!capaData ? (
+                <div style={{ padding: 20, textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>
+                  Loading CAPA results...
+                </div>
+              ) : capaData.error ? (
+                <div style={{ padding: 20, color: 'rgba(255,100,100,0.8)' }}>
+                  <div>⚠️ CAPA not available</div>
+                  <div style={{ fontSize: '13px', marginTop: 8 }}>{capaData.error}</div>
+                  {!capaData.installed && (
+                    <div style={{ fontSize: '12px', marginTop: 12, color: 'rgba(255,255,255,0.5)' }}>
+                      Install CAPA: <code>wget https://github.com/mandiant/capa/releases/download/v7.0.1/capa-v7.0.1-linux.zip && unzip && sudo mv capa /usr/local/bin/</code>
+                    </div>
+                  )}
+                </div>
+              ) : capaData.rules ? (
+                <div>
+                  <div style={{ padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: 8 }}>
+                      {Object.keys(capaData.rules).length} capabilities detected
+                    </div>
+                    {capaData.meta?.analysis && (
+                      <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                        {capaData.meta.analysis.format} · {capaData.meta.analysis.arch} · {capaData.meta.analysis.os}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div style={{ padding: '20px' }}>
+                    {Object.entries(capaData.rules).map(([ruleName, ruleData]: [string, any]) => (
+                      <details key={ruleName} className='fold' style={{ marginBottom: 12 }}>
+                        <summary className='foldSummary' style={{ fontWeight: 500 }}>
+                          ✓ {ruleName}
+                          {ruleData.namespace && (
+                            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginLeft: 8 }}>
+                              {ruleData.namespace}
+                            </span>
+                          )}
+                        </summary>
+                        <div className='foldBody'>
+                          {ruleData.matches && ruleData.matches.length > 0 && (
+                            <div style={{ marginBottom: 12 }}>
+                              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>
+                                Matches:
+                              </div>
+                              {ruleData.matches.slice(0, 10).map((match: any, idx: number) => (
+                                <div key={idx} style={{ fontSize: '12px', fontFamily: 'monospace', marginBottom: 4 }}>
+                                  • {match.address || 'N/A'}: {match.description || ''}
+                                </div>
+                              ))}
+                              {ruleData.matches.length > 10 && (
+                                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
+                                  ... and {ruleData.matches.length - 10} more
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {ruleData.attack && ruleData.attack.length > 0 && (
+                            <div>
+                              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>
+                                ATT&CK:
+                              </div>
+                              {ruleData.attack.map((att: any, idx: number) => (
+                                <div key={idx} style={{ fontSize: '12px', marginBottom: 4 }}>
+                                  • {att.id}: {att.tactic || att.technique || ''}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: 20, textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>
+                  No capabilities detected
+                </div>
               )}
             </div>
           </section>
