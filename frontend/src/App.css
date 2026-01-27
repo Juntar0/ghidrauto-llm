@@ -393,6 +393,33 @@
   white-space: pre-wrap;
 }
 
+.pseudoCodeLines {
+  display: flex;
+  flex-direction: column;
+}
+
+.pseudoCodeRow {
+  display: grid;
+  grid-template-columns: 3.5ch 1fr;
+  gap: 12px;
+  padding: 2px 0;
+}
+
+.pseudoCodeRowHover {
+  background: rgba(77, 163, 255, 0.08);
+}
+
+.pseudoCodeLn {
+  color: rgba(255,255,255,0.40);
+  text-align: right;
+  user-select: none;
+}
+
+.pseudoCodeContent {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .codeLink {
   color: var(--accent);
   text-decoration: underline;
