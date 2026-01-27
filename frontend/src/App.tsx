@@ -2695,6 +2695,43 @@ export default function App() {
               </div>
 
               <div className='sectionTitleRow' style={{ marginBottom: 8 }}>
+                <strong>Chat Assistant</strong>
+                <span className='badge'>UI</span>
+              </div>
+              <div className='secondary' style={{ marginBottom: 8 }}>
+                チャットで使う Provider / Model（/api/chat）
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 18 }}>
+                <label className='secondary'>Provider</label>
+                <select className='input' value={chatProvider} onChange={(e) => setChatProvider(e.target.value as any)} style={{ padding: '6px 8px', width: 200 }}>
+                  <option value='openai'>OpenAI-compatible</option>
+                  <option value='anthropic'>Anthropic</option>
+                </select>
+
+                <label className='secondary'>Model</label>
+                <input
+                  className='input'
+                  list='modelPresets'
+                  value={chatModel}
+                  onChange={(e) => setChatModel(e.target.value)}
+                  placeholder='(empty=default)'
+                  style={{ padding: '6px 8px', width: 240 }}
+                />
+
+                <button
+                  className='smallBtn'
+                  onClick={() => {
+                    // convenience: copy settings model/provider into chat
+                    setChatProvider(providerChoice === 'anthropic' ? 'anthropic' : 'openai')
+                    setChatModel(modelChoice)
+                  }}
+                  title='Copy from AI Provider section'
+                >
+                  Copy from above
+                </button>
+              </div>
+
+              <div className='sectionTitleRow' style={{ marginBottom: 8 }}>
                 <strong>OpenAI-compatible endpoint (internal)</strong>
               </div>
               <div className='secondary' style={{ marginBottom: 8 }}>
