@@ -42,8 +42,8 @@ def get_job_summary(work_dir: str, job_id: str) -> dict[str, Any]:
     return result
 
 
-def search_functions(work_dir: str, job_id: str, query: str = "", filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    """Search functions by name/tag/score. Returns list of matching functions."""
+def search_functions(work_dir: str, job_id: str, query: str = "", filters: dict[str, Any] | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    """Search functions by name/tag/score. Returns list of matching functions (max 50)."""
     job_path = Path(work_dir) / job_id
     functions_file = job_path / "functions.json"
     
@@ -73,8 +73,10 @@ def search_functions(work_dir: str, job_id: str, query: str = "", filters: dict[
             "entry": fn.get("entry", False),
         })
     
-    # Limit to 50 results
-    return results[:50]
+    # Enforce limit (max 50)
+    if limit > 50:
+        limit = 50
+    return results[:limit]
 
 
 def get_function_overview(work_dir: str, job_id: str, function_id: str) -> dict[str, Any]:
@@ -138,14 +140,20 @@ def get_function_code(work_dir: str, job_id: str, function_id: str, view: str = 
     return result
 
 
-def get_xrefs(work_dir: str, job_id: str, target: str, direction: str = "to") -> dict[str, Any]:
-    """Get cross-references (to/from target)."""
+def get_xrefs(work_dir: str, job_id: str, target: str, direction: str = "to", limit: int = 50) -> dict[str, Any]:
+    """Get cross-references (to/from target). Limited to top 50."""
     # Placeholder: would need xrefs.json or similar
-    return {"target": target, "direction": direction, "xrefs": [], "note": "xrefs not implemented"}
+    # Enforce limit
+    if limit > 50:
+        limit = 50
+    return {"target": target, "direction": direction, "xrefs": [], "limit": limit, "note": "xrefs not implemented"}
 
 
 def get_callgraph(work_dir: str, job_id: str, function_id: str, depth: int = 1, direction: str = "callee") -> dict[str, Any]:
-    """Get call graph (caller/callee)."""
+    """Get call graph (caller/callee). Max depth=2."""
+    # Enforce depth limit
+    if depth > 2:
+        depth = 2
     # Placeholder: would need call graph data
     return {"function_id": function_id, "depth": depth, "direction": direction, "nodes": [], "note": "callgraph not implemented"}
 
@@ -210,8 +218,9 @@ TOOL_DESCRIPTIONS = """
 
 1. **search_functions**
    - Purpose: Find functions by name (partial match)
-   - Args: `{"query": "main"}` (query is case-insensitive partial match)
+   - Args: `{"query": "main", "limit": 50}` (query is case-insensitive partial match)
    - Returns: `[{"name": "FUN_00401000", "address": "0x401000", "size": 256, "entry": false}, ...]`
+   - GUARD: Max 50 results returned
    - Use when: User asks to "find" or "search" functions
 
 2. **get_function_overview**
@@ -232,7 +241,19 @@ TOOL_DESCRIPTIONS = """
    - Returns: `{"function_count": 150, "string_count": 500, "meta": {...}}`
    - Use when: User asks "what is this binary?" or needs overview
 
-5-8. **get_xrefs / get_callgraph / get_pe_map / get_artifacts** (placeholders, not yet implemented)
+5. **get_xrefs** (placeholder)
+   - Purpose: Get cross-references to/from a target
+   - Args: `{"target": "address", "direction": "to", "limit": 50}`
+   - Returns: `{"xrefs": [...], "limit": 50}`
+   - GUARD: Max 50 xrefs returned
+
+6. **get_callgraph** (placeholder)
+   - Purpose: Get call graph (caller/callee tree)
+   - Args: `{"function_id": "FUN_00401000", "depth": 1, "direction": "callee"}`
+   - Returns: `{"nodes": [...], "depth": 2}`
+   - GUARD: Max depth=2 enforced
+
+7-8. **get_pe_map / get_artifacts** (placeholders, not yet implemented)
 
 ### Action Tools
 

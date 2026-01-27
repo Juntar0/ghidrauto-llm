@@ -824,6 +824,11 @@ async def chat(req: ChatRequest):
         thought = tool_calls_data.get("thought", "")
         tool_results: list[dict] = []
 
+        # GUARD: Max 5 tool calls per turn
+        if len(tool_calls) > 5:
+            tool_calls = tool_calls[:5]
+            thought += " [WARNING: Limited to 5 tool calls]"
+
         # ===== Phase 2: Execute Tools =====
         if tool_calls:
             for tc in tool_calls:
@@ -849,11 +854,23 @@ async def chat(req: ChatRequest):
         
         # Add current user message + tool results
         if tool_results:
-            # Tool results available - AI MUST cite these
-            user_content_with_tools = f"User question: {user_msg}\n\n=== TOOL RESULTS (YOU MUST USE THESE) ===\n{json.dumps(tool_results, ensure_ascii=False, indent=2)}\n\nAnswer the question using ONLY the information from tool results above. Do NOT fabricate."
+            # Tool results available - AI MUST cite these in Evidence-First format
+            user_content_with_tools = f"""User question: {user_msg}
+
+=== TOOL RESULTS (YOU MUST USE THESE) ===
+{json.dumps(tool_results, ensure_ascii=False, indent=2)}
+
+=== INSTRUCTIONS ===
+Answer in Evidence-First format:
+1. 【Evidence】- List facts from tool results (addresses, function names, exact quotes)
+2. 【Unknowns】- What you DON'T know yet
+3. 【Needs Review】- What to investigate next
+4. 【結論】- Brief conclusion based ONLY on Evidence
+
+Do NOT fabricate. Only use information from tool results above."""
         else:
             # No tools called - general question
-            user_content_with_tools = f"User question: {user_msg}\n\n(No tool results - this is a general question. Answer directly.)"
+            user_content_with_tools = f"User question: {user_msg}\n\n(No tool results - this is a general question. Answer directly in Japanese.)"
         
         final_answer_messages.append({"role": "user", "content": user_content_with_tools})
 
