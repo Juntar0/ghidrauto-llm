@@ -58,9 +58,9 @@ if [[ -z "$FOUND_ZIP" ]]; then
     echo "Resolving Ghidra ${GHIDRA_VERSION} release asset from GitHub API..."
     # Use GitHub API to find a release asset that matches ghidra_<ver>_PUBLIC_*.zip
     ASSET_URL="$(
-      python3 - <<'PY'
-import json, sys, urllib.request
-ver = sys.argv[1]
+      GHIDRA_VERSION="$GHIDRA_VERSION" python3 - <<'PY'
+import json, os, urllib.request
+ver = os.environ['GHIDRA_VERSION']
 api = 'https://api.github.com/repos/NationalSecurityAgency/ghidra/releases'
 req = urllib.request.Request(api, headers={'User-Agent':'autore-installer'})
 with urllib.request.urlopen(req, timeout=60) as r:
@@ -74,7 +74,6 @@ for rel in data:
             raise SystemExit(0)
 print('')
 PY
-      "$GHIDRA_VERSION"
     )"
     if [[ -z "$ASSET_URL" ]]; then
       echo "ERROR: Could not auto-resolve Ghidra ${GHIDRA_VERSION} zip from GitHub API." >&2
@@ -125,7 +124,8 @@ patch_kv() {
   local key="$1"
   local val="$2"
   if grep -qE "^${key}=" .env; then
-    perl -0777 -i -pe "s/^${key}=.*\$/${key}=${val}/m" .env
+    # Use # as delimiter to avoid conflict with / in paths
+    perl -0777 -i -pe "s#^${key}=.*\$#${key}=${val}#m" .env
   else
     printf '\n%s=%s\n' "$key" "$val" >> .env
   fi
