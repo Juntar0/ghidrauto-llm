@@ -14,7 +14,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_DIR"
 
-GHIDRA_VERSION_DEFAULT="11.3.1"
+GHIDRA_VERSION_DEFAULT="12.0.1"
 GHIDRA_VERSION="${GHIDRA_VERSION:-$GHIDRA_VERSION_DEFAULT}"
 
 # Choose a known-good OpenJDK
