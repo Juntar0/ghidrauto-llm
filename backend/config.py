@@ -32,14 +32,19 @@ class Settings:
 
 def load_settings() -> Settings:
     _load_dotenv()
+    from pathlib import Path
+    repo_dir = Path(__file__).parent.parent
     return Settings(
-        work_dir=os.getenv("AUTORE_WORK_DIR", "/home/ubuntu/clawd/autore/work"),
+        work_dir=os.getenv("AUTORE_WORK_DIR", str(repo_dir / "work")),
         bind_host=os.getenv("AUTORE_BIND_HOST", "0.0.0.0"),
         bind_port=int(os.getenv("AUTORE_BIND_PORT", "5555")),
         ghidra_analyze_headless=os.getenv(
             "GHIDRA_ANALYZE_HEADLESS", "/usr/local/bin/analyzeHeadless"
         ),
         ghidra_scripts_dir=os.getenv(
-            "GHIDRA_SCRIPTS_DIR", "/home/ubuntu/clawd/autore/ghidra_scripts"
+            "GHIDRA_SCRIPTS_DIR", str(repo_dir / "ghidra_scripts")
         ),
     )
+
+
+cfg = load_settings()
