@@ -38,6 +38,10 @@ from .chat_llm import (
 )
 from .chat_tools_v2 import TOOL_DESCRIPTIONS, dispatch_tool_v2
 
+# In-memory session state for multi-step exploration
+# Structure: {job_id: {step_count: int, active_function_id: str | None, last_updated: float}}
+chat_sessions: dict[str, dict] = {}
+
 
 app = FastAPI(title="AutoRE Backend")
 settings = load_settings()
@@ -765,6 +769,41 @@ async def chat(req: ChatRequest):
 
     # Build history list
     hist = [m.model_dump() for m in (req.history or [])]
+    
+    # GUARD 2: Session state management (multi-step exploration)
+    import time
+    
+    # Reset session if history is empty (user cleared chat)
+    if not hist or len(hist) == 0:
+        chat_sessions[job_id] = {
+            "step_count": 0,
+            "active_function_id": None,
+            "last_updated": time.time(),
+        }
+    
+    if job_id not in chat_sessions:
+        chat_sessions[job_id] = {
+            "step_count": 0,
+            "active_function_id": None,
+            "last_updated": time.time(),
+        }
+    
+    session = chat_sessions[job_id]
+    session["step_count"] += 1
+    session["last_updated"] = time.time()
+    
+    # GUARD 2: Step limit check (max 12 steps)
+    MAX_STEPS = 12
+    if session["step_count"] > MAX_STEPS:
+        return {
+            "job_id": job_id,
+            "model": "guard",
+            "provider": provider,
+            "reply": f"【Step Limit Reached】\n\nステップ上限（{MAX_STEPS}手）に到達しました。\n\n【Needs Review】\n次に調査すべき内容を整理してから、新しいチャットセッションを開始してください。\n\nヒント: 🗑️ボタンでチャット履歴をクリアすると、ステップカウンターもリセットされます。",
+            "tool_results": [],
+            "ui_actions": [],
+            "debug": {"step_count": session["step_count"], "step_limit_reached": True},
+        }
 
     if provider in ("openai", "openai-compatible", "oai"):
         openai_base = req.base_url or os.getenv("OPENAI_BASE_URL")
@@ -775,7 +814,18 @@ async def chat(req: ChatRequest):
         model = req.model or os.getenv("OPENAI_MODEL_DEFAULT", "gpt-oss-120b")
 
         # ===== Phase 1: Tool Selection =====
-        tool_selection_prompt = SYSTEM_PROMPT_TOOL_SELECTION + "\n\n" + TOOL_DESCRIPTIONS
+        # GUARD 5: State context - inject active_function_id if available
+        state_context = ""
+        if session["active_function_id"]:
+            state_context = f"\n\n【Current State】\nActive function: {session['active_function_id']}\nStep: {session['step_count']}/{MAX_STEPS}"
+        else:
+            state_context = f"\n\n【Current State】\nStep: {session['step_count']}/{MAX_STEPS}"
+        
+        # Warn if approaching step limit
+        if session["step_count"] >= 10:
+            state_context += f"\n⚠️ WARNING: Approaching step limit ({session['step_count']}/{MAX_STEPS}). Prioritize critical investigations."
+        
+        tool_selection_prompt = SYSTEM_PROMPT_TOOL_SELECTION + "\n\n" + TOOL_DESCRIPTIONS + state_context
         tool_selection_messages = [{"role": "system", "content": tool_selection_prompt}]
         
         # Only add current user message (no history for tool selection phase)
@@ -837,6 +887,13 @@ async def chat(req: ChatRequest):
                 try:
                     result = dispatch_tool_v2(settings.work_dir, job_id, tool_name, tool_args)
                     tool_results.append({"tool": tool_name, "args": tool_args, "result": result})
+                    
+                    # GUARD 5: Update active_function_id when tools access specific functions
+                    if tool_name in ("get_function_code", "get_function_overview", "run_ai_decompile"):
+                        function_id = tool_args.get("function_id")
+                        if function_id:
+                            session["active_function_id"] = function_id
+                    
                 except Exception as e:
                     tool_results.append({"tool": tool_name, "args": tool_args, "error": str(e)})
 
@@ -892,6 +949,9 @@ Do NOT fabricate. Only use information from tool results above."""
             "thought": thought,
             "tool_calls_requested": [{"tool": tc.get("tool"), "args": tc.get("args")} for tc in tool_calls],
             "tool_count": len(tool_calls),
+            "step_count": session["step_count"],
+            "max_steps": MAX_STEPS,
+            "active_function_id": session["active_function_id"],
         }
 
         return {

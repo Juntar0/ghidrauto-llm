@@ -3309,8 +3309,20 @@ export default function App() {
                   >
                     {msg.debug?.thought && showChatDebug && (
                       <div style={{ marginBottom: 8, padding: '6px 8px', background: 'rgba(255,215,0,0.1)', borderRadius: 6, fontSize: 11, borderLeft: '3px solid rgba(255,215,0,0.5)' }}>
-                        <div className='secondary' style={{ fontWeight: 600, marginBottom: 4 }}>💭 Thinking:</div>
+                        <div className='secondary' style={{ fontWeight: 600, marginBottom: 4 }}>
+                          💭 Thinking
+                          {msg.debug.step_count && msg.debug.max_steps && (
+                            <span style={{ marginLeft: 8, fontSize: 10, opacity: 0.7 }}>
+                              (Step {msg.debug.step_count}/{msg.debug.max_steps})
+                            </span>
+                          )}
+                        </div>
                         <div className='secondary' style={{ fontSize: 11, lineHeight: 1.4 }}>{msg.debug.thought}</div>
+                        {msg.debug.active_function_id && (
+                          <div className='secondary' style={{ fontSize: 10, marginTop: 4, opacity: 0.7 }}>
+                            📍 Active: {msg.debug.active_function_id}
+                          </div>
+                        )}
                       </div>
                     )}
                     <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{msg.content}</div>
