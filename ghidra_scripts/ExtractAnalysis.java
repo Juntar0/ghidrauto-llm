@@ -11,8 +11,67 @@ import ghidra.program.model.address.*;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.pcode.*;
 import ghidra.program.model.symbol.FlowType;
+import ghidra.program.model.symbol.*;
 
 public class ExtractAnalysis extends GhidraScript {
+
+	// Import information holder
+	private static class ImportInfo {
+		String dll;
+		String address;
+		boolean isWinApi;
+	}
+
+	// Function metadata holder (for JSON generation)
+	private static class FunctionMeta {
+		String id;
+		String name;
+		String entry;
+		long size;
+		boolean isExternal;
+		boolean isWinApi;
+		boolean isThunk;
+		String dll;
+		LinkedHashSet<String> callsOut;
+		LinkedHashSet<String> calledBy;
+	}
+
+	private static boolean isWindowsDLL(String lib) {
+		if (lib == null) return false;
+		String lower = lib.toLowerCase();
+		
+		// Core Windows system DLLs
+		if (lower.startsWith("kernel32")) return true;
+		if (lower.startsWith("user32")) return true;
+		if (lower.startsWith("advapi32")) return true;
+		if (lower.startsWith("ntdll")) return true;
+		if (lower.startsWith("msvcrt")) return true;
+		if (lower.startsWith("gdi32")) return true;
+		if (lower.startsWith("ws2_32")) return true;
+		if (lower.startsWith("shell32")) return true;
+		if (lower.startsWith("ole32")) return true;
+		if (lower.startsWith("comctl32")) return true;
+		if (lower.startsWith("comdlg32")) return true;
+		if (lower.startsWith("shlwapi")) return true;
+		if (lower.startsWith("wininet")) return true;
+		if (lower.startsWith("crypt32")) return true;
+		if (lower.startsWith("bcrypt")) return true;
+		if (lower.startsWith("secur32")) return true;
+		if (lower.startsWith("winmm")) return true;
+		if (lower.startsWith("version")) return true;
+		if (lower.startsWith("iphlpapi")) return true;
+		if (lower.startsWith("winsock")) return true;
+		
+		// API-MS-WIN-* (Windows 10+ API sets)
+		if (lower.startsWith("api-ms-win-")) return true;
+		if (lower.startsWith("ext-ms-")) return true;
+		
+		// Other common Windows DLLs
+		if (lower.contains("ucrt")) return true;
+		if (lower.contains("vcruntime")) return true;
+		
+		return false;
+	}
 
 	private static boolean looksLikeString(String s) {
 		if (s == null) return false;
@@ -177,6 +236,42 @@ public class ExtractAnalysis extends GhidraScript {
 		}
 	}
 
+	private Map<String, ImportInfo> extractImports() {
+		Map<String, ImportInfo> importMap = new HashMap<>();
+		try {
+			ExternalManager em = currentProgram.getExternalManager();
+			String[] libNames = em.getExternalLibraryNames();
+			
+			for (String lib : libNames) {
+				if (lib == null || lib.trim().isEmpty()) continue;
+				boolean isWinApi = isWindowsDLL(lib);
+				
+				try {
+					Iterator<ExternalLocation> it = em.getExternalLocations(lib);
+					while (it != null && it.hasNext()) {
+						ExternalLocation loc = it.next();
+						String apiName = loc.getLabel();
+						if (apiName == null || apiName.trim().isEmpty()) continue;
+						
+						Address addr = loc.getAddress();
+						
+						ImportInfo info = new ImportInfo();
+						info.dll = lib;
+						info.address = addr != null ? addr.toString() : null;
+						info.isWinApi = isWinApi;
+						
+						importMap.put(apiName, info);
+					}
+				} catch (Exception e) {
+					// Skip this library if error
+				}
+			}
+		} catch (Exception e) {
+			// Return empty map if error
+		}
+		return importMap;
+	}
+
 	@Override
 	protected void run() throws Exception {
 		String[] args = getScriptArgs();
@@ -209,6 +304,9 @@ public class ExtractAnalysis extends GhidraScript {
 			funcs.add(fit.next());
 		}
 		funcs.sort(Comparator.comparingLong(f -> f.getEntryPoint().getOffset()));
+
+		// Extract import table
+		Map<String, ImportInfo> importMap = extractImports();
 
 		writeStatus(statusPath, "extracting", funcs.size(), 0, null);
 
@@ -329,6 +427,43 @@ public class ExtractAnalysis extends GhidraScript {
 			// ignore
 		}
 
+		// Build imports section
+		sb.append("  \"imports\": [\n");
+		Map<String, List<Map<String, String>>> importsByDll = new LinkedHashMap<>();
+		for (Map.Entry<String, ImportInfo> e : importMap.entrySet()) {
+			String apiName = e.getKey();
+			ImportInfo info = e.getValue();
+			String dllName = info.dll != null ? info.dll : "unknown";
+			if (!importsByDll.containsKey(dllName)) {
+				importsByDll.put(dllName, new ArrayList<>());
+			}
+			Map<String, String> api = new LinkedHashMap<>();
+			api.put("name", apiName);
+			api.put("address", info.address);
+			importsByDll.get(dllName).add(api);
+		}
+		int dllIdx = 0;
+		for (Map.Entry<String, List<Map<String, String>>> e : importsByDll.entrySet()) {
+			String dllName = e.getKey();
+			List<Map<String, String>> apis = e.getValue();
+			sb.append("    {");
+			sb.append("\"dll\":").append(jsonStr(dllName)).append(",");
+			sb.append("\"apis\":[");
+			for (int j = 0; j < apis.size(); j++) {
+				Map<String, String> api = apis.get(j);
+				sb.append("{");
+				sb.append("\"name\":").append(jsonStr(api.get("name"))).append(",");
+				sb.append("\"address\":").append(jsonStr(api.get("address")));
+				sb.append("}");
+				if (j != apis.size() - 1) sb.append(",");
+			}
+			sb.append("]}");
+			if (dllIdx != importsByDll.size() - 1) sb.append(",");
+			sb.append("\n");
+			dllIdx++;
+		}
+		sb.append("  ],\n");
+
 		sb.append("  \"strings\": [\n");
 		for (int i = 0; i < strings.size(); i++) {
 			Map<String, Object> row = strings.get(i);
@@ -366,12 +501,69 @@ public class ExtractAnalysis extends GhidraScript {
 			} catch (Exception e) {
 				// continue
 			}
+			
+			// Determine external/winapi/thunk flags
+			String fname = f.getName();
+			boolean isExternal = false;
+			boolean isWinApi = false;
+			boolean isThunk = false;
+			String dll = null;
+			
+			// Case 1: Direct match in import map
+			if (importMap.containsKey(fname)) {
+				ImportInfo imp = importMap.get(fname);
+				isExternal = true;
+				isWinApi = imp.isWinApi;
+				dll = imp.dll;
+				try {
+					isThunk = f.isThunk();
+				} catch (Exception e) {}
+			}
+			// Case 2: Thunk function check
+			else {
+				try {
+					if (f.isThunk()) {
+						isThunk = true;
+						isExternal = true;
+						// Try to extract DLL from name (e.g., "kernel32.dll_CreateFileA")
+						if (fname.contains(".dll_") || fname.contains(".DLL_")) {
+							int idx = fname.indexOf(".dll_");
+							if (idx < 0) idx = fname.indexOf(".DLL_");
+							if (idx >= 0) {
+								dll = fname.substring(0, idx + 4);
+								isWinApi = isWindowsDLL(dll);
+							}
+						}
+						// Check if it's in import map by alternative name
+						String cleanName = fname;
+						if (fname.startsWith("__imp_")) cleanName = fname.substring(6);
+						if (importMap.containsKey(cleanName)) {
+							ImportInfo imp = importMap.get(cleanName);
+							isWinApi = imp.isWinApi;
+							dll = imp.dll;
+						}
+					}
+				} catch (Exception e) {}
+			}
+			// Case 3: Explicit external flag
+			if (!isExternal) {
+				try {
+					if (f.isExternal()) {
+						isExternal = true;
+					}
+				} catch (Exception e) {}
+			}
+			
 			long size = f.getBody().getNumAddresses();
 			sb.append("    {");
 			sb.append("\"id\":").append(jsonStr(f.getName())).append(",");
 			sb.append("\"name\":").append(jsonStr(f.getName())).append(",");
 			sb.append("\"entry\":").append(jsonStr(addrStr(f.getEntryPoint()))).append(",");
 			sb.append("\"size\":").append(size).append(",");
+			sb.append("\"is_external\":").append(isExternal).append(",");
+			sb.append("\"is_winapi\":").append(isWinApi).append(",");
+			sb.append("\"is_thunk\":").append(isThunk).append(",");
+			sb.append("\"dll\":").append(jsonStr(dll)).append(",");
 			// calls_out
 			sb.append("\"calls_out\":[");
 			LinkedHashSet<String> outs = callsOut.get(f.getName());
