@@ -742,6 +742,8 @@ class ChatRequest(BaseModel):
     history: list[ChatMessage] = []
     model: str | None = None
     provider: str | None = None  # currently only openai-compatible is implemented
+    base_url: str | None = None  # Override OPENAI_BASE_URL from Settings
+    api_key: str | None = None   # Override OPENAI_API_KEY from Settings
 
 
 @app.post("/api/chat")
@@ -770,10 +772,10 @@ async def chat(req: ChatRequest):
     hist.append({"role": "user", "content": user_msg})
 
     if provider in ("openai", "openai-compatible", "oai"):
-        openai_base = os.getenv("OPENAI_BASE_URL")
-        openai_key = os.getenv("OPENAI_API_KEY")
+        openai_base = req.base_url or os.getenv("OPENAI_BASE_URL")
+        openai_key = req.api_key or os.getenv("OPENAI_API_KEY")
         if not openai_base:
-            raise HTTPException(400, "OPENAI_BASE_URL is not set (.env)")
+            raise HTTPException(400, "OPENAI_BASE_URL is not set (Settings or .env)")
 
         model = req.model or os.getenv("OPENAI_MODEL_DEFAULT", "gpt-oss-120b")
         messages = build_messages(hist)

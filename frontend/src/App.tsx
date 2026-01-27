@@ -3318,6 +3318,8 @@ export default function App() {
                               history,
                             }
                             if (chatModel.trim()) body.model = chatModel.trim()
+                            if (openaiBaseUrl.trim()) body.base_url = openaiBaseUrl.trim()
+                            if (openaiApiKey.trim()) body.api_key = openaiApiKey.trim()
 
                             const r = await fetch(`${apiBase}/api/chat`, {
                               method: 'POST',
@@ -3373,6 +3375,8 @@ export default function App() {
                             history,
                           }
                           if (chatModel.trim()) body.model = chatModel.trim()
+                          if (openaiBaseUrl.trim()) body.base_url = openaiBaseUrl.trim()
+                          if (openaiApiKey.trim()) body.api_key = openaiApiKey.trim()
 
                           const r = await fetch(`${apiBase}/api/chat`, {
                             method: 'POST',
