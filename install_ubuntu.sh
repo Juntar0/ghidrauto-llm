@@ -17,8 +17,8 @@ cd "$REPO_DIR"
 GHIDRA_VERSION_DEFAULT="12.0.1"
 GHIDRA_VERSION="${GHIDRA_VERSION:-$GHIDRA_VERSION_DEFAULT}"
 
-# Choose a known-good OpenJDK
-JAVA_PKG="openjdk-17-jre-headless"
+# Choose a known-good OpenJDK (JDK, not JRE - Ghidra needs the full dev kit)
+JAVA_PKG="openjdk-17-jdk-headless"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1
