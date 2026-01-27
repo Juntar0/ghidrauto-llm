@@ -204,21 +204,60 @@ TOOL_REGISTRY = {
 
 
 TOOL_DESCRIPTIONS = """
-Available tools:
+## Available Tools
 
-**Core tools (読み取り)**
-1. get_job_summary(job_id) - Get job overview (file, arch, function count)
-2. search_functions(job_id, query, filters) - Search functions by name/tag
-3. get_function_overview(job_id, function_id) - Get function metadata (addr/size/AI status)
-4. get_function_code(job_id, function_id, view) - Get decompiled code
-5. get_xrefs(job_id, target, direction) - Get cross-references
-6. get_callgraph(job_id, function_id, depth, direction) - Get call graph
-7. get_pe_map(job_id, range_or_section) - Get PE map info
-8. get_artifacts(job_id, type) - Get capa/FLOSS artifacts
+### Core Tools (Information Retrieval)
 
-**Action tools (書き込み)**
-9. run_ai_decompile(job_id, function_id, mode) - Queue AI decompile
-10. save_annotation(job_id, target, content) - Save note/hypothesis
+1. **search_functions**
+   - Purpose: Find functions by name (partial match)
+   - Args: `{"query": "main"}` (query is case-insensitive partial match)
+   - Returns: `[{"name": "FUN_00401000", "address": "0x401000", "size": 256, "entry": false}, ...]`
+   - Use when: User asks to "find" or "search" functions
+
+2. **get_function_overview**
+   - Purpose: Get metadata about a specific function
+   - Args: `{"function_id": "FUN_00401000"}` (function name or address)
+   - Returns: `{"name": "...", "address": "...", "size": 123, "ai_status": "ok"|"not_run"|"error", "has_pseudocode": true}`
+   - Use when: Need to check if function exists or has AI decompile result
+
+3. **get_function_code**
+   - Purpose: Get decompiled pseudocode for a function
+   - Args: `{"function_id": "FUN_00401000", "view": "decompiler"}`
+   - Returns: `{"pseudocode": "int main() {...}", "proposed_name": "main", "signature": "int(int, char**)"}`
+   - Use when: User asks to "see code" or "show" function content
+
+4. **get_job_summary**
+   - Purpose: Get high-level binary info
+   - Args: `{}` (no args needed)
+   - Returns: `{"function_count": 150, "string_count": 500, "meta": {...}}`
+   - Use when: User asks "what is this binary?" or needs overview
+
+5-8. **get_xrefs / get_callgraph / get_pe_map / get_artifacts** (placeholders, not yet implemented)
+
+### Action Tools
+
+9. **run_ai_decompile**
+   - Purpose: Queue AI decompilation for a function
+   - Args: `{"function_id": "FUN_00401000", "mode": "default"}`
+   - Returns: `{"status": "queued", "function_id": "..."}`
+   - Use when: User asks to "run AI" or "analyze with AI"
+
+10. **save_annotation**
+    - Purpose: Save user notes/hypotheses
+    - Args: `{"target": "FUN_00401000", "content": "This looks like WinMain"}`
+    - Returns: `{"status": "saved", "target": "..."}`
+    - Use when: User wants to save observations
+
+## Usage Examples
+
+**User: "mainっぽい関数を探して"**
+→ `{"tool_calls": [{"tool": "search_functions", "args": {"query": "main"}}]}`
+
+**User: "FUN_00401000のコードを見せて"**
+→ `{"tool_calls": [{"tool": "get_function_code", "args": {"function_id": "FUN_00401000", "view": "decompiler"}}]}`
+
+**User: "このバイナリは何？"**
+→ `{"tool_calls": [{"tool": "get_job_summary", "args": {}}]}`
 """
 
 

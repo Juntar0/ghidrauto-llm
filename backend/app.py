@@ -778,14 +778,8 @@ async def chat(req: ChatRequest):
         tool_selection_prompt = SYSTEM_PROMPT_TOOL_SELECTION + "\n\n" + TOOL_DESCRIPTIONS
         tool_selection_messages = [{"role": "system", "content": tool_selection_prompt}]
         
-        # Add history
-        for m in hist:
-            role = m.get("role")
-            if role in ("user", "assistant"):
-                tool_selection_messages.append({"role": role, "content": m.get("content", "")})
-        
-        # Add current user message
-        tool_selection_messages.append({"role": "user", "content": user_msg})
+        # Only add current user message (no history for tool selection phase)
+        tool_selection_messages.append({"role": "user", "content": f"User question: {user_msg}\n\nDecide which tools to use. Output JSON only."})
 
         resp1 = call_openai_compatible(
             base_url=openai_base,
@@ -803,9 +797,27 @@ async def chat(req: ChatRequest):
         # Parse JSON
         tool_calls_data = {"tool_calls": []}
         try:
-            tool_calls_data = json.loads(tool_selection_text)
-        except Exception:
-            # If JSON parsing fails, assume no tools needed
+            # Try to extract JSON from markdown code blocks if present
+            text = tool_selection_text.strip()
+            if text.startswith("```"):
+                # Extract from ```json ... ``` or ``` ... ```
+                lines = text.split("\n")
+                json_lines = []
+                in_block = False
+                for line in lines:
+                    if line.strip().startswith("```"):
+                        if in_block:
+                            break
+                        in_block = True
+                        continue
+                    if in_block:
+                        json_lines.append(line)
+                text = "\n".join(json_lines).strip()
+            
+            tool_calls_data = json.loads(text)
+        except Exception as e:
+            # If JSON parsing fails, assume no tools needed and log error
+            print(f"[chat] JSON parse failed: {e}, raw: {tool_selection_text[:200]}")
             pass
 
         tool_calls = tool_calls_data.get("tool_calls", [])
