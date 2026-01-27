@@ -821,6 +821,7 @@ async def chat(req: ChatRequest):
             pass
 
         tool_calls = tool_calls_data.get("tool_calls", [])
+        thought = tool_calls_data.get("thought", "")
         tool_results: list[dict] = []
 
         # ===== Phase 2: Execute Tools =====
@@ -871,6 +872,7 @@ async def chat(req: ChatRequest):
 
         # Build debug info
         debug_info = {
+            "thought": thought,
             "tool_calls_requested": [{"tool": tc.get("tool"), "args": tc.get("args")} for tc in tool_calls],
             "tool_count": len(tool_calls),
         }

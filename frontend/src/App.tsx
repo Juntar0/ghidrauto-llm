@@ -624,6 +624,7 @@ export default function App() {
   const [chatProvider, setChatProvider] = useLocalStorageState<'openai' | 'anthropic'>('autore.chat.provider', 'openai')
   const [chatModel, setChatModel] = useLocalStorageState<string>('autore.chat.model', '')
   const [chatError, setChatError] = useState<string | null>(null)
+  const [showChatDebug, setShowChatDebug] = useLocalStorageState<boolean>('autore.chat.showDebug', false)
   const chatMessagesEndRef = useRef<HTMLDivElement>(null)
   
   // Auto-scroll to bottom when new messages arrive
@@ -3255,6 +3256,15 @@ export default function App() {
                     />
                     <button
                       className='smallBtn'
+                      onClick={() => setShowChatDebug(!showChatDebug)}
+                      disabled={chatLoading}
+                      style={{ padding: '6px 10px', borderRadius: 10, opacity: showChatDebug ? 1 : 0.5 }}
+                      title='Toggle debug info'
+                    >
+                      🔧
+                    </button>
+                    <button
+                      className='smallBtn'
                       onClick={() => {
                         if (confirm('Clear chat history?')) {
                           setChatMessages([])
@@ -3293,14 +3303,22 @@ export default function App() {
                       border: `1px solid ${msg.role === 'user' ? 'rgba(77, 163, 255, 0.3)' : 'rgba(255,255,255,0.12)'}`,
                       borderRadius: 10,
                       padding: '10px 14px',
+                      wordBreak: 'break-word',
+                      overflowWrap: 'break-word',
                     }}
                   >
+                    {msg.debug?.thought && showChatDebug && (
+                      <div style={{ marginBottom: 8, padding: '6px 8px', background: 'rgba(255,215,0,0.1)', borderRadius: 6, fontSize: 11, borderLeft: '3px solid rgba(255,215,0,0.5)' }}>
+                        <div className='secondary' style={{ fontWeight: 600, marginBottom: 4 }}>💭 Thinking:</div>
+                        <div className='secondary' style={{ fontSize: 11, lineHeight: 1.4 }}>{msg.debug.thought}</div>
+                      </div>
+                    )}
                     <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{msg.content}</div>
-                    {msg.debug && msg.debug.tool_count > 0 && (
-                      <div style={{ marginTop: 8, padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: 6, fontSize: 11 }}>
+                    {showChatDebug && msg.debug && msg.debug.tool_count > 0 && (
+                      <div style={{ marginTop: 8, padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: 6, fontSize: 11, wordBreak: 'break-all' }}>
                         <div className='secondary' style={{ fontWeight: 600, marginBottom: 4 }}>🔧 Tools used ({msg.debug.tool_count}):</div>
                         {msg.debug.tool_calls_requested.map((tc: any, idx: number) => (
-                          <div key={idx} className='secondary' style={{ fontFamily: 'monospace', fontSize: 10 }}>
+                          <div key={idx} className='secondary' style={{ fontFamily: 'monospace', fontSize: 10, wordBreak: 'break-all' }}>
                             • {tc.tool}({JSON.stringify(tc.args).slice(0, 60)}{JSON.stringify(tc.args).length > 60 ? '...' : ''})
                           </div>
                         ))}

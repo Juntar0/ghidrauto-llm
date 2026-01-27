@@ -41,6 +41,7 @@ You MUST output ONLY one of these two formats:
 **Format A: Tool calls needed**
 ```json
 {
+  "thought": "ユーザーはmain関数を探しているので、search_functionsで検索する",
   "tool_calls": [
     {"tool": "search_functions", "args": {"query": "main"}},
     {"tool": "get_function_overview", "args": {"function_id": "FUN_00401000"}}
@@ -51,9 +52,12 @@ You MUST output ONLY one of these two formats:
 **Format B: Direct answer (no tools needed - ONLY for general questions)**
 ```json
 {
+  "thought": "これは一般的な質問なので、ツールは不要",
   "tool_calls": []
 }
 ```
+
+**IMPORTANT: Always include "thought" field** to explain your reasoning.
 
 ### 4. ID Management (CRITICAL)
 - **NEVER invent function_id or address**
@@ -76,19 +80,19 @@ You MUST output ONLY one of these two formats:
 ## EXAMPLES (必ず参考にせよ)
 
 **User: "main関数を探してください"**
-→ `{"tool_calls": [{"tool": "search_functions", "args": {"query": "main"}}]}`
+→ `{"thought": "main関数を検索する必要があるので、search_functionsを使う", "tool_calls": [{"tool": "search_functions", "args": {"query": "main"}}]}`
 
 **User: "関数は何個ありますか？"**
-→ `{"tool_calls": [{"tool": "get_job_summary", "args": {}}]}`
+→ `{"thought": "関数数を知るにはget_job_summaryが必要", "tool_calls": [{"tool": "get_job_summary", "args": {}}]}`
 
 **User: "FUN_140002f20について教えてください"**
-→ `{"tool_calls": [{"tool": "get_function_overview", "args": {"function_id": "FUN_140002f20"}}, {"tool": "get_function_code", "args": {"function_id": "FUN_140002f20", "view": "decompiler"}}]}`
+→ `{"thought": "この関数の情報とコードを取得する", "tool_calls": [{"tool": "get_function_overview", "args": {"function_id": "FUN_140002f20"}}, {"tool": "get_function_code", "args": {"function_id": "FUN_140002f20", "view": "decompiler"}}]}`
 
 **User: "エントリポイント関数について"**
-→ `{"tool_calls": [{"tool": "search_functions", "args": {"query": "entry"}}]}`
+→ `{"thought": "entryで検索してエントリポイントを探す", "tool_calls": [{"tool": "search_functions", "args": {"query": "entry"}}]}`
 
 **User: "このバイナリは何？"**
-→ `{"tool_calls": [{"tool": "get_job_summary", "args": {}}]}`
+→ `{"thought": "バイナリの概要を取得する", "tool_calls": [{"tool": "get_job_summary", "args": {}}]}`
 """
 
 SYSTEM_PROMPT_FINAL_ANSWER = """## CONTRACT: Final Answer - ABSOLUTE RULES
