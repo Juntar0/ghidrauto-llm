@@ -1,0 +1,22 @@
+# secrets
+.env
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# node (dev only)
+frontend/node_modules/
+
+# runtime artifacts
+work/
+logs/
+.backend.pid
+.worker.pid
+
+# optional local deps
+.deps/
+
+# OS
+.DS_Store

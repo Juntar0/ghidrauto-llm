@@ -1,0 +1,485 @@
+/* App layout + code views */
+
+:root {
+  --bg: #0f1115;
+  --panel: rgba(255, 255, 255, 0.06);
+  --panel2: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.12);
+  --muted: rgba(255, 255, 255, 0.65);
+  --text: rgba(255, 255, 255, 0.92);
+  --accent: #4da3ff;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.appRoot {
+  height: 100vh;
+  display: grid;
+  /* sidebar | resizer | main */
+  grid-template-columns: auto 6px 1fr;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.sidebar {
+  height: 100vh;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: rgba(0,0,0,0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebarCollapsed .brandRow {
+  justify-content: center;
+}
+
+.sidebarCollapsed .brand {
+  display: none;
+}
+
+.sidebarHeader {
+  padding: 12px 12px 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.smallBtn {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: inherit;
+  cursor: pointer;
+}
+
+.smallBtn:hover {
+  border-color: rgba(255,255,255,0.16);
+}
+
+.smallBtnActive {
+  background: rgba(77, 163, 255, 0.18);
+  border-color: rgba(77, 163, 255, 0.35);
+}
+
+.fieldRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.25);
+  color: inherit;
+}
+
+.input::placeholder {
+  color: rgba(255,255,255,0.45);
+}
+
+.secondary {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sidebarBody {
+  padding: 10px 10px 12px 10px;
+  overflow: auto;
+}
+
+.sectionTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.85);
+}
+
+.badgeOk { border-color: rgba(77, 163, 255, 0.35); }
+.badgeErr { border-color: rgba(255, 96, 96, 0.35); }
+.badgeRun { border-color: rgba(255, 215, 98, 0.35); }
+
+.functionList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fnItem {
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.05);
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.fnItem:hover {
+  border-color: rgba(255,255,255,0.18);
+}
+
+.fnItemSelected {
+  border-color: rgba(77, 163, 255, 0.55);
+  background: rgba(77, 163, 255, 0.10);
+}
+
+.fnMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fnName {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fnSub {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.65);
+}
+
+.main {
+  height: 100vh;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+
+.topbar {
+  border-bottom: 1px solid var(--border);
+  background: rgba(0,0,0,0.18);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.topbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.topbarTitle {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: rgba(255,255,255,0.75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbarRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panes {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pane {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+
+.paneHeader {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.paneHeader h4 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.2px;
+}
+
+.paneHeader .sub {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+}
+
+.paneBody {
+  overflow: auto;
+  padding: 10px 12px 14px 12px;
+}
+
+.resizer {
+  width: 6px;
+  cursor: col-resize;
+  background: rgba(255,255,255,0.04);
+  border-left: 1px solid rgba(255,255,255,0.08);
+  border-right: 1px solid rgba(255,255,255,0.08);
+}
+
+.resizer:hover {
+  background: rgba(77, 163, 255, 0.12);
+}
+
+.code {
+  height: 100%;
+  overflow: auto;
+}
+
+.codePre {
+  margin: 0;
+  padding: 10px 12px;
+  white-space: pre;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+/* Disassembly code table */
+.disasm {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.disasmRow {
+  display: grid;
+  grid-template-columns: 4.5ch 12ch 1fr;
+  gap: 10px;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.disasmRow:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.disasmRowHover {
+  background: rgba(77, 163, 255, 0.10);
+}
+
+.codeLines {
+  display: flex;
+  flex-direction: column;
+}
+
+.codeLine {
+  padding: 0 2px;
+}
+
+.codeLineHover {
+  background: rgba(77, 163, 255, 0.08);
+}
+
+.disasmLn {
+  color: rgba(255,255,255,0.40);
+  text-align: right;
+}
+
+.disasmAddr {
+  color: rgba(255,255,255,0.75);
+}
+
+.disasmInst {
+  white-space: pre-wrap;
+}
+
+/* Ghidra decompile output */
+.ghidraDecomp {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.ghidraRow {
+  display: grid;
+  grid-template-columns: 4.5ch 1fr;
+  gap: 10px;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.ghidraRow:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.ghidraRowHover {
+  background: rgba(77, 163, 255, 0.10);
+}
+
+.ghidraLn {
+  color: rgba(255,255,255,0.40);
+  text-align: right;
+}
+
+.ghidraContent {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Pseudocode */
+.pseudoTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pseudoName {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.pseudoSig {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: rgba(255,255,255,0.65);
+}
+
+.codeBlock {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.4;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 12px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+}
+
+.codeLink {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.codeLink:hover {
+  filter: brightness(1.15);
+}
+
+.callEdgePrefix {
+  display: inline-block;
+  min-width: 3.5ch;
+  margin-right: 8px;
+  color: rgba(255,255,255,0.55);
+  font-family: var(--mono);
+}
+
+.fold {
+  margin-top: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.foldSummary {
+  cursor: pointer;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.04);
+  user-select: none;
+}
+
+.foldBody {
+  padding: 10px 12px;
+}
+
+.logBox {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.35;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 12px;
+  padding: 8px 10px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.logRow {
+  display: grid;
+  grid-template-columns: 18ch 16ch 1fr;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+.logTs { color: rgba(255,255,255,0.55); }
+.logEvt { color: rgba(77, 163, 255, 0.92); }
+.logMsg { color: rgba(255,255,255,0.85); white-space: pre-wrap; }
+
+/* Sidebar resizer */
+.sidebarResizer {
+  width: 6px;
+  cursor: col-resize;
+  background: rgba(255,255,255,0.04);
+  border-left: 1px solid rgba(255,255,255,0.08);
+}
+
+/* Mobile */
+@media (max-width: 900px) {
+  .appRoot {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 50;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.55);
+  }
+
+  .sidebarResizer { display: none; }
+
+  .panes {
+    grid-template-columns: 1fr;
+  }
+
+  .resizer { display: none; }
+}
