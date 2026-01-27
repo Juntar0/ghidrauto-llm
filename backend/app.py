@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -135,47 +134,6 @@ async def create_job_by_path(background: BackgroundTasks, path: str = Form(...))
     return {"job_id": job_id}
 
 
-def _auto_enqueue_functions(job_id: str) -> None:
-    """Auto-enqueue all functions for LLM decompilation after Ghidra extraction."""
-    ap = _analysis_path(job_id)
-    if not ap.exists():
-        return
-    
-    analysis = read_json(ap, {})
-    functions = analysis.get("functions", {})
-    if not functions:
-        return
-    
-    base = Path(settings.work_dir) / job_id
-    qp = base / "queue" / "requests.jsonl"
-    qp.parent.mkdir(parents=True, exist_ok=True)
-    
-    jst = timezone(timedelta(hours=9))
-    enqueued_at = datetime.now(jst).isoformat()
-    
-    # Default settings for auto-enqueue
-    provider = "anthropic" if os.getenv("ANTHROPIC_API_KEY") else "openai"
-    model = None  # Use worker defaults
-    
-    with open(qp, "a", encoding="utf-8") as f:
-        for fid in functions.keys():
-            req = {
-                "job_id": job_id,
-                "function_id": fid,
-                "provider": provider,
-                "model": model,
-                "openai_base_url": os.getenv("OPENAI_BASE_URL"),
-                "openai_api_key": os.getenv("OPENAI_API_KEY"),
-                "openai_api_mode": "chat",
-                "openai_reasoning": False,
-                "guardrail_max_attempts": 4,
-                "guardrail_min_confidence": 0.55,
-                "force": False,
-                "enqueued_at": enqueued_at,
-            }
-            f.write(json.dumps(req, ensure_ascii=False) + "\n")
-
-
 def _run_extract(job_id: str, sample_path: Path, *, force: bool = False) -> None:
     # idempotent by default
     ap = _analysis_path(job_id)
@@ -217,12 +175,6 @@ def _run_extract(job_id: str, sample_path: Path, *, force: bool = False) -> None
                     "job_id": job_id,
                 },
             )
-        except Exception:
-            pass
-        
-        # Auto-enqueue all functions for LLM decompilation
-        try:
-            _auto_enqueue_functions(job_id)
         except Exception:
             pass
     except Exception as e:

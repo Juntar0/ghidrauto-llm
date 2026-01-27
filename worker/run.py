@@ -54,12 +54,8 @@ def load_settings() -> Settings:
     if not anth_key and not openai_base:
         raise RuntimeError("Set ANTHROPIC_API_KEY or OPENAI_BASE_URL")
 
-    from pathlib import Path as P
-    repo_dir = P(__file__).parent.parent
-    default_work = str(repo_dir / "work")
-
     return Settings(
-        work_dir=os.getenv("AUTORE_WORK_DIR", default_work),
+        work_dir=os.getenv("AUTORE_WORK_DIR", "/home/ubuntu/clawd/autore/work"),
 
         anthropic_api_key=anth_key,
         anthropic_model_default=os.getenv("ANTHROPIC_MODEL_DEFAULT", "claude-sonnet-4-5"),
