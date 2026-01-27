@@ -621,6 +621,9 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; timestamp: string }>>([])
   const [chatInput, setChatInput] = useState<string>('')
   const [chatLoading, setChatLoading] = useState<boolean>(false)
+  const [chatProvider, setChatProvider] = useLocalStorageState<'openai' | 'anthropic'>('autore.chat.provider', 'openai')
+  const [chatModel, setChatModel] = useLocalStorageState<string>('autore.chat.model', '')
+  const [chatError, setChatError] = useState<string | null>(null)
   const [stringQuery, setStringQuery] = useState<string>('')
   const [stringMinLen, setStringMinLen] = useState<number>(0)
   const [stringMaxLen, setStringMaxLen] = useState<number>(0)
@@ -3176,6 +3179,43 @@ export default function App() {
                   gap: 12,
                 }}
               >
+                <div
+                  style={{
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 1,
+                    background: '#1a1a1a',
+                    paddingBottom: 10,
+                    marginBottom: 4,
+                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <select
+                      className='input'
+                      style={{ width: 130, padding: '6px 8px', borderRadius: 10 }}
+                      value={chatProvider}
+                      onChange={(e) => setChatProvider(e.target.value as any)}
+                      disabled={chatLoading}
+                    >
+                      <option value='openai'>OpenAI-compatible</option>
+                      <option value='anthropic'>Anthropic</option>
+                    </select>
+                    <input
+                      className='input'
+                      style={{ flex: 1, padding: '6px 8px', borderRadius: 10 }}
+                      placeholder='model (optional)'
+                      value={chatModel}
+                      onChange={(e) => setChatModel(e.target.value)}
+                      disabled={chatLoading}
+                    />
+                  </div>
+                  {chatError ? (
+                    <div style={{ marginTop: 8, color: 'rgba(255,96,96,0.9)', fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                      {chatError}
+                    </div>
+                  ) : null}
+                </div>
                 {chatMessages.length === 0 && (
                   <div className='secondary' style={{ textAlign: 'center', marginTop: 40 }}>
                     <div style={{ fontSize: 24, marginBottom: 8 }}>👋</div>
@@ -3223,24 +3263,52 @@ export default function App() {
                       if (e.key === 'Enter' && !e.shiftKey && chatInput.trim()) {
                         e.preventDefault()
                         const msg = chatInput.trim()
+                        const now = new Date().toISOString()
                         setChatInput('')
-                        setChatMessages((prev) => [
-                          ...prev,
-                          { role: 'user', content: msg, timestamp: new Date().toISOString() },
-                        ])
+                        setChatError(null)
+                        setChatMessages((prev) => [...prev, { role: 'user', content: msg, timestamp: now }])
                         setChatLoading(true)
-                        // TODO: Send to backend API
-                        setTimeout(() => {
-                          setChatMessages((prev) => [
-                            ...prev,
-                            {
-                              role: 'assistant',
-                              content: 'Backend API not yet implemented. Stay tuned!',
-                              timestamp: new Date().toISOString(),
-                            },
-                          ])
-                          setChatLoading(false)
-                        }, 1000)
+
+                        ;(async () => {
+                          try {
+                            const history = chatMessages
+                              .slice(-20)
+                              .map((m) => ({ role: m.role, content: m.content }))
+                            const body: any = {
+                              job_id: jobId,
+                              provider: chatProvider,
+                              message: msg,
+                              history,
+                            }
+                            if (chatModel.trim()) body.model = chatModel.trim()
+
+                            const r = await fetch(`${apiBase}/api/chat`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify(body),
+                            })
+                            const data = await r.json().catch(() => null)
+                            if (!r.ok) {
+                              throw new Error((data && (data.detail || data.error)) || `HTTP ${r.status}`)
+                            }
+
+                            const reply = String(data?.reply ?? '')
+                            const ts = new Date().toISOString()
+                            setChatMessages((prev) => [...prev, { role: 'assistant', content: reply || '(no response)', timestamp: ts }])
+
+                            // Apply UI actions (e.g., navigate)
+                            const actions = Array.isArray(data?.ui_actions) ? data.ui_actions : []
+                            for (const a of actions) {
+                              if (a?.action === 'navigate' && a?.function_id) {
+                                navigateTo(String(a.function_id), { from: selected ?? undefined, recordEdge: true })
+                              }
+                            }
+                          } catch (err: any) {
+                            setChatError(String(err?.message || err))
+                          } finally {
+                            setChatLoading(false)
+                          }
+                        })()
                       }
                     }}
                     disabled={chatLoading}
@@ -3250,24 +3318,51 @@ export default function App() {
                     onClick={() => {
                       const msg = chatInput.trim()
                       if (!msg) return
+                      const now = new Date().toISOString()
                       setChatInput('')
-                      setChatMessages((prev) => [
-                        ...prev,
-                        { role: 'user', content: msg, timestamp: new Date().toISOString() },
-                      ])
+                      setChatError(null)
+                      setChatMessages((prev) => [...prev, { role: 'user', content: msg, timestamp: now }])
                       setChatLoading(true)
-                      // TODO: Send to backend API
-                      setTimeout(() => {
-                        setChatMessages((prev) => [
-                          ...prev,
-                          {
-                            role: 'assistant',
-                            content: 'Backend API not yet implemented. Stay tuned!',
-                            timestamp: new Date().toISOString(),
-                          },
-                        ])
-                        setChatLoading(false)
-                      }, 1000)
+
+                      ;(async () => {
+                        try {
+                          const history = chatMessages
+                            .slice(-20)
+                            .map((m) => ({ role: m.role, content: m.content }))
+                          const body: any = {
+                            job_id: jobId,
+                            provider: chatProvider,
+                            message: msg,
+                            history,
+                          }
+                          if (chatModel.trim()) body.model = chatModel.trim()
+
+                          const r = await fetch(`${apiBase}/api/chat`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body),
+                          })
+                          const data = await r.json().catch(() => null)
+                          if (!r.ok) {
+                            throw new Error((data && (data.detail || data.error)) || `HTTP ${r.status}`)
+                          }
+
+                          const reply = String(data?.reply ?? '')
+                          const ts = new Date().toISOString()
+                          setChatMessages((prev) => [...prev, { role: 'assistant', content: reply || '(no response)', timestamp: ts }])
+
+                          const actions = Array.isArray(data?.ui_actions) ? data.ui_actions : []
+                          for (const a of actions) {
+                            if (a?.action === 'navigate' && a?.function_id) {
+                              navigateTo(String(a.function_id), { from: selected ?? undefined, recordEdge: true })
+                            }
+                          }
+                        } catch (err: any) {
+                          setChatError(String(err?.message || err))
+                        } finally {
+                          setChatLoading(false)
+                        }
+                      })()
                     }}
                     disabled={chatLoading || !chatInput.trim()}
                   >
