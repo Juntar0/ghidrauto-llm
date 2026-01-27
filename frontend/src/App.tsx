@@ -613,6 +613,14 @@ export default function App() {
   const [showCallTree, setShowCallTree] = useLocalStorageState<boolean>('autore.showCallTree', false)
   const [showXrefs, setShowXrefs] = useState<boolean>(false)
   const [showStrings, setShowStrings] = useState<boolean>(false)
+  
+  // Chat assistant
+  const [showChat, setShowChat] = useState<boolean>(false)
+  const [chatMinimized, setChatMinimized] = useState<boolean>(false)
+  const [chatPosition, setChatPosition] = useState<{ x: number; y: number }>({ x: 20, y: 20 })
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; timestamp: string }>>([])
+  const [chatInput, setChatInput] = useState<string>('')
+  const [chatLoading, setChatLoading] = useState<boolean>(false)
   const [stringQuery, setStringQuery] = useState<string>('')
   const [stringMinLen, setStringMinLen] = useState<number>(0)
   const [stringMaxLen, setStringMaxLen] = useState<number>(0)
@@ -3078,6 +3086,199 @@ export default function App() {
           </div>
         </div>
       ) : null}
+
+      {/* Chat Assistant Button */}
+      {!showChat && jobId && (
+        <button
+          className='chatFloatingBtn'
+          onClick={() => setShowChat(true)}
+          title='Open AI Assistant'
+        >
+          💬
+        </button>
+      )}
+
+      {/* Floating Chat Window */}
+      {showChat && jobId && (
+        <div
+          className='chatWindow'
+          style={{
+            position: 'fixed',
+            left: chatPosition.x,
+            top: chatPosition.y,
+            width: chatMinimized ? 300 : 450,
+            height: chatMinimized ? 50 : 600,
+            zIndex: 2000,
+            display: 'flex',
+            flexDirection: 'column',
+            background: '#1a1a1a',
+            border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: 12,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+          }}
+        >
+          {/* Title Bar (Draggable) */}
+          <div
+            className='chatTitleBar'
+            style={{
+              padding: '12px 16px',
+              borderBottom: chatMinimized ? 'none' : '1px solid rgba(255,255,255,0.1)',
+              cursor: 'move',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              userSelect: 'none',
+            }}
+            onMouseDown={(e) => {
+              const startX = e.clientX - chatPosition.x
+              const startY = e.clientY - chatPosition.y
+              const onMove = (me: MouseEvent) => {
+                setChatPosition({ x: me.clientX - startX, y: me.clientY - startY })
+              }
+              const onUp = () => {
+                document.removeEventListener('mousemove', onMove)
+                document.removeEventListener('mouseup', onUp)
+              }
+              document.addEventListener('mousemove', onMove)
+              document.addEventListener('mouseup', onUp)
+            }}
+          >
+            <div style={{ fontWeight: 600 }}>🤖 AI Assistant</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className='chatBtn'
+                onClick={() => setChatMinimized(!chatMinimized)}
+                title={chatMinimized ? 'Restore' : 'Minimize'}
+              >
+                {chatMinimized ? '⬜' : '➖'}
+              </button>
+              <button
+                className='chatBtn'
+                onClick={() => setShowChat(false)}
+                title='Close'
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {/* Chat Body */}
+          {!chatMinimized && (
+            <>
+              <div
+                className='chatMessages'
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  padding: 16,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12,
+                }}
+              >
+                {chatMessages.length === 0 && (
+                  <div className='secondary' style={{ textAlign: 'center', marginTop: 40 }}>
+                    <div style={{ fontSize: 24, marginBottom: 8 }}>👋</div>
+                    <div>Ask me anything about this binary!</div>
+                    <div style={{ fontSize: 12, marginTop: 8 }}>
+                      I can navigate functions, search strings, analyze code, and more.
+                    </div>
+                  </div>
+                )}
+                {chatMessages.map((msg, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                      maxWidth: '80%',
+                      background: msg.role === 'user' ? 'rgba(77, 163, 255, 0.2)' : 'rgba(255,255,255,0.08)',
+                      border: `1px solid ${msg.role === 'user' ? 'rgba(77, 163, 255, 0.3)' : 'rgba(255,255,255,0.12)'}`,
+                      borderRadius: 10,
+                      padding: '10px 14px',
+                    }}
+                  >
+                    <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                    <div className='secondary' style={{ fontSize: 10, marginTop: 6 }}>
+                      {new Date(msg.timestamp).toLocaleTimeString()}
+                    </div>
+                  </div>
+                ))}
+                {chatLoading && (
+                  <div style={{ alignSelf: 'flex-start', color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>
+                    Thinking...
+                  </div>
+                )}
+              </div>
+
+              {/* Input */}
+              <div style={{ padding: 12, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type='text'
+                    className='input'
+                    placeholder='Ask something...'
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey && chatInput.trim()) {
+                        e.preventDefault()
+                        const msg = chatInput.trim()
+                        setChatInput('')
+                        setChatMessages((prev) => [
+                          ...prev,
+                          { role: 'user', content: msg, timestamp: new Date().toISOString() },
+                        ])
+                        setChatLoading(true)
+                        // TODO: Send to backend API
+                        setTimeout(() => {
+                          setChatMessages((prev) => [
+                            ...prev,
+                            {
+                              role: 'assistant',
+                              content: 'Backend API not yet implemented. Stay tuned!',
+                              timestamp: new Date().toISOString(),
+                            },
+                          ])
+                          setChatLoading(false)
+                        }, 1000)
+                      }
+                    }}
+                    disabled={chatLoading}
+                  />
+                  <button
+                    className='smallBtn'
+                    onClick={() => {
+                      const msg = chatInput.trim()
+                      if (!msg) return
+                      setChatInput('')
+                      setChatMessages((prev) => [
+                        ...prev,
+                        { role: 'user', content: msg, timestamp: new Date().toISOString() },
+                      ])
+                      setChatLoading(true)
+                      // TODO: Send to backend API
+                      setTimeout(() => {
+                        setChatMessages((prev) => [
+                          ...prev,
+                          {
+                            role: 'assistant',
+                            content: 'Backend API not yet implemented. Stay tuned!',
+                            timestamp: new Date().toISOString(),
+                          },
+                        ])
+                        setChatLoading(false)
+                      }, 1000)
+                    }}
+                    disabled={chatLoading || !chatInput.trim()}
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
