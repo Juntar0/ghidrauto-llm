@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -25,6 +27,9 @@ from .storage import (
     sha256_file,
     write_json_atomic,
 )
+
+from .chat_llm import build_messages, call_openai_compatible
+from .chat_tools import available_tools_schema, dispatch_tool
 
 
 app = FastAPI(title="AutoRE Backend")
@@ -712,6 +717,125 @@ async def debug_logs_stream(job_id: str, tail: int = 200):
             await asyncio.sleep(0.5)
 
     return EventSourceResponse(gen())
+
+
+# -----------------
+# Chat Assistant API
+# -----------------
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+    name: str | None = None
+    tool_call_id: str | None = None
+
+
+class ChatRequest(BaseModel):
+    job_id: str
+    message: str
+    history: list[ChatMessage] = []
+    model: str | None = None
+    provider: str | None = None  # currently only openai-compatible is implemented
+
+
+@app.post("/api/chat")
+async def chat(req: ChatRequest):
+    """Interactive chat endpoint.
+
+    Currently supports OpenAI-compatible APIs via OPENAI_BASE_URL.
+    Tool calling is supported for basic RE operations (strings/functions/context/navigation).
+    """
+
+    job_id = req.job_id
+    user_msg = (req.message or "").strip()
+    if not user_msg:
+        raise HTTPException(400, "message is required")
+
+    openai_base = os.getenv("OPENAI_BASE_URL")
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if not openai_base:
+        raise HTTPException(400, "OPENAI_BASE_URL is not set (.env)")
+
+    model = req.model or os.getenv("OPENAI_MODEL_DEFAULT", "gpt-oss-120b")
+
+    # Build message list
+    hist = [m.model_dump() for m in (req.history or [])]
+    hist.append({"role": "user", "content": user_msg})
+    messages = build_messages(hist)
+
+    tools = available_tools_schema()
+
+    tool_results: list[dict] = []
+    ui_actions: list[dict] = []
+
+    # Tool-call loop (max 3 iterations)
+    for _ in range(3):
+        resp = call_openai_compatible(
+            base_url=openai_base,
+            api_key=openai_key,
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+        )
+
+        choice = (resp.get("choices") or [{}])[0]
+        msg = choice.get("message") or {}
+
+        # If tool calls exist, execute them and continue
+        tool_calls = msg.get("tool_calls") or []
+        if tool_calls:
+            # add assistant message with tool_calls (content may be None)
+            messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls})
+            for tc in tool_calls:
+                fn = (tc.get("function") or {})
+                name = fn.get("name")
+                args_raw = fn.get("arguments") or "{}"
+                try:
+                    args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
+                except Exception:
+                    args = {}
+
+                try:
+                    result = dispatch_tool(settings.work_dir, job_id, name, args)
+                except Exception as e:
+                    result = {"error": str(e), "tool": name, "args": args}
+
+                tool_results.append({"tool": name, "args": args, "result": result})
+                if isinstance(result, dict) and result.get("action") == "navigate":
+                    ui_actions.append(result)
+
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.get("id"),
+                        "name": name,
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                )
+            continue
+
+        # No tool calls: final assistant content
+        reply = (msg.get("content") or "").strip()
+        if not reply:
+            reply = "(no response)"
+        return {
+            "job_id": job_id,
+            "model": model,
+            "reply": reply,
+            "tool_results": tool_results,
+            "ui_actions": ui_actions,
+        }
+
+    # If we exhausted tool loop
+    return {
+        "job_id": job_id,
+        "model": model,
+        "reply": "Tool loop limit reached. Try a more specific request.",
+        "tool_results": tool_results,
+        "ui_actions": ui_actions,
+    }
 
 
 class NoCacheStaticFiles(StaticFiles):
