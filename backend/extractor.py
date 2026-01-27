@@ -52,8 +52,8 @@ def run_ghidra_extract(
     ]
 
     env = os.environ.copy()
-    # Force empty JAVA_HOME so Ghidra auto-detects Java (instead of prompting)
-    env["JAVA_HOME"] = ""
+    # Remove JAVA_HOME completely so Ghidra auto-detects Java (instead of prompting)
+    env.pop("JAVA_HOME", None)
 
     # Capture ghidra output for debugging/progress.
     log_path = paths["extract"] / "ghidra.log"
