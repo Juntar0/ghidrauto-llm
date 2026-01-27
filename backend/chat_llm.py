@@ -10,12 +10,15 @@ import httpx
 __all__ = [
     "SYSTEM_PROMPT_TOOL_SELECTION",
     "SYSTEM_PROMPT_FINAL_ANSWER",
+    "SYSTEM_PROMPT_REACT_PLANNER",
+    "SYSTEM_PROMPT_REACT_VERIFIER",
     "build_messages",
     "build_anthropic_messages",
     "call_openai_compatible",
     "call_anthropic_messages",
 ]
 
+# Legacy (2-phase) tool selection prompt (kept for compatibility)
 SYSTEM_PROMPT_TOOL_SELECTION = """## CONTRACT - GUARDED AGENT
 
 You are a reverse-engineering assistant. You MUST follow these GUARDS:
@@ -115,6 +118,61 @@ You MUST output ONLY one of these two formats:
 
 **User: "このバイナリは何？"**
 → `{"thought": "バイナリの概要を取得する", "tool_calls": [{"tool": "get_job_summary", "args": {}}]}`
+"""
+
+# ReAct (Planner / Executor / Verifier) prompts
+SYSTEM_PROMPT_REACT_PLANNER = """## ReAct Planner (GUARDED)
+
+Role: **Planner**. Plan the next 1 to 3 actions only.
+
+Guards:
+- Use ONLY the provided tool list.
+- Do NOT exceed 3 planned actions.
+- Do NOT fabricate IDs (function_id/address/job_id). If unknown, plan a search first.
+- Output MUST be valid JSON only.
+
+Output JSON schema:
+```json
+{
+  "plan": "短い計画（1-2文）",
+  "tool_calls": [
+    {"tool": "search_functions", "args": {"query": "main", "limit": 50}},
+    {"tool": "get_function_overview", "args": {"function_id": "FUN_..."}}
+  ]
+}
+```
+
+If no tools are needed (general question), output:
+```json
+{"plan": "...", "tool_calls": []}
+```
+"""
+
+SYSTEM_PROMPT_REACT_VERIFIER = """## ReAct Verifier (GUARDED)
+
+Role: **Verifier**. You do NOT execute tools.
+Your job is to check whether the observed tool results are sufficient and consistent.
+
+Guards:
+- Evidence-first mindset: if evidence is missing, request more tools.
+- Do NOT fabricate IDs.
+- Output MUST be valid JSON only.
+
+Output JSON schema:
+```json
+{
+  "done": false,
+  "verdict": "短い判定（十分/不足/矛盾）",
+  "missing": ["what is missing"],
+  "next_tool_calls": [
+    {"tool": "get_function_code", "args": {"function_id": "FUN_...", "view": "decompiler"}}
+  ]
+}
+```
+
+Rules:
+- If done=true, next_tool_calls MUST be empty.
+- next_tool_calls length MUST be 0 to 3.
 """
 
 SYSTEM_PROMPT_FINAL_ANSWER = """## CONTRACT: Final Answer - EVIDENCE-FIRST (GUARD 4)

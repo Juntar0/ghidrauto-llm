@@ -30,7 +30,8 @@ from .storage import (
 
 from .chat_llm import (
     SYSTEM_PROMPT_FINAL_ANSWER,
-    SYSTEM_PROMPT_TOOL_SELECTION,
+    SYSTEM_PROMPT_REACT_PLANNER,
+    SYSTEM_PROMPT_REACT_VERIFIER,
     build_anthropic_messages,
     build_messages,
     call_anthropic_messages,
@@ -789,12 +790,11 @@ async def chat(req: ChatRequest):
         }
     
     session = chat_sessions[job_id]
-    session["step_count"] += 1
     session["last_updated"] = time.time()
-    
-    # GUARD 2: Step limit check (max 12 steps)
+
+    # GUARD 2: Step limit (max 12 ReAct iterations per session)
     MAX_STEPS = 12
-    if session["step_count"] > MAX_STEPS:
+    if session["step_count"] >= MAX_STEPS:
         return {
             "job_id": job_id,
             "model": "guard",
@@ -802,7 +802,7 @@ async def chat(req: ChatRequest):
             "reply": f"【Step Limit Reached】\n\nステップ上限（{MAX_STEPS}手）に到達しました。\n\n【Needs Review】\n次に調査すべき内容を整理してから、新しいチャットセッションを開始してください。\n\nヒント: 🗑️ボタンでチャット履歴をクリアすると、ステップカウンターもリセットされます。",
             "tool_results": [],
             "ui_actions": [],
-            "debug": {"step_count": session["step_count"], "step_limit_reached": True},
+            "debug": {"step_count": session["step_count"], "max_steps": MAX_STEPS, "step_limit_reached": True},
         }
 
     if provider in ("openai", "openai-compatible", "oai"):
@@ -813,44 +813,10 @@ async def chat(req: ChatRequest):
 
         model = req.model or os.getenv("OPENAI_MODEL_DEFAULT", "gpt-oss-120b")
 
-        # ===== Phase 1: Tool Selection =====
-        # GUARD 5: State context - inject active_function_id if available
-        state_context = ""
-        if session["active_function_id"]:
-            state_context = f"\n\n【Current State】\nActive function: {session['active_function_id']}\nStep: {session['step_count']}/{MAX_STEPS}"
-        else:
-            state_context = f"\n\n【Current State】\nStep: {session['step_count']}/{MAX_STEPS}"
-        
-        # Warn if approaching step limit
-        if session["step_count"] >= 10:
-            state_context += f"\n⚠️ WARNING: Approaching step limit ({session['step_count']}/{MAX_STEPS}). Prioritize critical investigations."
-        
-        tool_selection_prompt = SYSTEM_PROMPT_TOOL_SELECTION + "\n\n" + TOOL_DESCRIPTIONS + state_context
-        tool_selection_messages = [{"role": "system", "content": tool_selection_prompt}]
-        
-        # Only add current user message (no history for tool selection phase)
-        tool_selection_messages.append({"role": "user", "content": f"User question: {user_msg}\n\nDecide which tools to use. Output JSON only."})
-
-        resp1 = call_openai_compatible(
-            base_url=openai_base,
-            api_key=openai_key,
-            model=model,
-            messages=tool_selection_messages,
-            tools=None,
-            tool_choice=None,
-        )
-
-        choice1 = (resp1.get("choices") or [{}])[0]
-        msg1 = choice1.get("message") or {}
-        tool_selection_text = (msg1.get("content") or "").strip()
-
-        # Parse JSON
-        tool_calls_data = {"tool_calls": []}
-        try:
-            # Try to extract JSON from markdown code blocks if present
-            text = tool_selection_text.strip()
+        # ===== ReAct Loop: plan -> act -> observe -> verify (max 12 steps) =====
+        def _parse_json_maybe(md: str) -> dict:
+            text = (md or "").strip()
             if text.startswith("```"):
-                # Extract from ```json ... ``` or ``` ... ```
                 lines = text.split("\n")
                 json_lines = []
                 in_block = False
@@ -863,44 +829,110 @@ async def chat(req: ChatRequest):
                     if in_block:
                         json_lines.append(line)
                 text = "\n".join(json_lines).strip()
-            
-            tool_calls_data = json.loads(text)
-        except Exception as e:
-            # If JSON parsing fails, assume no tools needed and log error
-            print(f"[chat] JSON parse failed: {e}, raw: {tool_selection_text[:200]}")
-            pass
+            return json.loads(text)
 
-        tool_calls = tool_calls_data.get("tool_calls", [])
-        thought = tool_calls_data.get("thought", "")
-        tool_results: list[dict] = []
+        debug_trace: list[dict] = []
+        all_tool_results: list[dict] = []
+        last_plan: str = ""
 
-        # GUARD: Max 5 tool calls per turn
-        if len(tool_calls) > 5:
-            tool_calls = tool_calls[:5]
-            thought += " [WARNING: Limited to 5 tool calls]"
+        # Shared state context injected into planner/verifier
+        def _state_context() -> str:
+            ctx = f"\n\n【Current State】\nStep: {session['step_count']}/{MAX_STEPS}"
+            if session.get("active_function_id"):
+                ctx += f"\nActive function: {session['active_function_id']}"
+            if session["step_count"] >= 10:
+                ctx += f"\n⚠️ WARNING: Approaching step limit ({session['step_count']}/{MAX_STEPS}). Prioritize critical investigations."
+            return ctx
 
-        # ===== Phase 2: Execute Tools =====
-        if tool_calls:
+        # Run up to remaining steps in this request until verifier says done
+        while session["step_count"] < MAX_STEPS:
+            # ===== Planner =====
+            planner_prompt = SYSTEM_PROMPT_REACT_PLANNER + "\n\n" + TOOL_DESCRIPTIONS + _state_context()
+            planner_messages = [
+                {"role": "system", "content": planner_prompt},
+                {"role": "user", "content": f"User question: {user_msg}\n\nPlan next 1-3 tool calls only. JSON only."},
+            ]
+            resp_p = call_openai_compatible(
+                base_url=openai_base,
+                api_key=openai_key,
+                model=model,
+                messages=planner_messages,
+                tools=None,
+                tool_choice=None,
+            )
+            msg_p = ((resp_p.get("choices") or [{}])[0].get("message") or {})
+            raw_plan = (msg_p.get("content") or "").strip()
+            try:
+                plan_obj = _parse_json_maybe(raw_plan)
+            except Exception as e:
+                debug_trace.append({"planner_error": str(e), "raw": raw_plan[:200]})
+                plan_obj = {"plan": "parse_failed", "tool_calls": []}
+
+            last_plan = str(plan_obj.get("plan") or "")
+            tool_calls = plan_obj.get("tool_calls") or []
+            if len(tool_calls) > 3:
+                tool_calls = tool_calls[:3]
+
+            debug_trace.append({"planner": {"plan": last_plan, "tool_calls": tool_calls}})
+
+            # If planner decides no tools, break and answer directly
+            if not tool_calls:
+                break
+
+            # ===== Executor (tools only) =====
+            step_tool_results: list[dict] = []
             for tc in tool_calls:
                 tool_name = tc.get("tool")
                 tool_args = tc.get("args", {})
                 try:
                     result = dispatch_tool_v2(settings.work_dir, job_id, tool_name, tool_args)
-                    tool_results.append({"tool": tool_name, "args": tool_args, "result": result})
-                    
-                    # GUARD 5: Update active_function_id when tools access specific functions
+                    step_tool_results.append({"tool": tool_name, "args": tool_args, "result": result})
+                    # state sync
                     if tool_name in ("get_function_code", "get_function_overview", "run_ai_decompile"):
-                        function_id = tool_args.get("function_id")
-                        if function_id:
-                            session["active_function_id"] = function_id
-                    
+                        fid = tool_args.get("function_id")
+                        if fid:
+                            session["active_function_id"] = fid
                 except Exception as e:
-                    tool_results.append({"tool": tool_name, "args": tool_args, "error": str(e)})
+                    step_tool_results.append({"tool": tool_name, "args": tool_args, "error": str(e)})
+
+            all_tool_results.extend(step_tool_results)
+            session["step_count"] += 1
+
+            # ===== Verifier =====
+            verifier_prompt = SYSTEM_PROMPT_REACT_VERIFIER + "\n\n" + TOOL_DESCRIPTIONS + _state_context()
+            verifier_messages = [
+                {"role": "system", "content": verifier_prompt},
+                {"role": "user", "content": "User question: " + user_msg + "\n\nObserved tool results:\n" + json.dumps(step_tool_results, ensure_ascii=False, indent=2) + "\n\nDecide if done. If not, request next 1-3 tool calls as JSON."},
+            ]
+            resp_v = call_openai_compatible(
+                base_url=openai_base,
+                api_key=openai_key,
+                model=model,
+                messages=verifier_messages,
+                tools=None,
+                tool_choice=None,
+            )
+            msg_v = ((resp_v.get("choices") or [{}])[0].get("message") or {})
+            raw_v = (msg_v.get("content") or "").strip()
+            try:
+                ver_obj = _parse_json_maybe(raw_v)
+            except Exception as e:
+                debug_trace.append({"verifier_error": str(e), "raw": raw_v[:200]})
+                ver_obj = {"done": False, "verdict": "parse_failed", "missing": ["verifier_json"], "next_tool_calls": []}
+
+            debug_trace.append({"verifier": ver_obj})
+
+            if ver_obj.get("done") is True:
+                break
+
+            # If verifier requests next_tool_calls, we will loop again;
+            # merge into next planner step by rewriting user_msg? keep same question.
+            # (Planner will re-plan from scratch next iteration.)
+            continue
+
+        tool_results = all_tool_results
 
         # ===== Phase 3: Final Answer =====
-        # If no tools were called, AI decided it can answer directly (general question)
-        # Otherwise, AI must answer based on tool results ONLY
-        
         final_answer_messages = [{"role": "system", "content": SYSTEM_PROMPT_FINAL_ANSWER}]
         
         # Add history
@@ -946,12 +978,15 @@ Do NOT fabricate. Only use information from tool results above."""
 
         # Build debug info
         debug_info = {
-            "thought": thought,
-            "tool_calls_requested": [{"tool": tc.get("tool"), "args": tc.get("args")} for tc in tool_calls],
-            "tool_count": len(tool_calls),
+            "thought": last_plan,
+            "tool_calls_requested": [
+                {"tool": tr.get("tool"), "args": tr.get("args")} for tr in tool_results
+            ],
+            "tool_count": len(tool_results),
             "step_count": session["step_count"],
             "max_steps": MAX_STEPS,
-            "active_function_id": session["active_function_id"],
+            "active_function_id": session.get("active_function_id"),
+            "react_trace": debug_trace,
         }
 
         return {
