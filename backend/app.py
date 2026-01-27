@@ -29,14 +29,14 @@ from .storage import (
 )
 
 from .chat_llm import (
+    SYSTEM_PROMPT_FINAL_ANSWER,
+    SYSTEM_PROMPT_TOOL_SELECTION,
     build_anthropic_messages,
-    build_anthropic_messages_with_job_context,
     build_messages,
-    build_messages_with_job_context,
     call_anthropic_messages,
     call_openai_compatible,
 )
-from .chat_tools import available_tools_anthropic, available_tools_schema, dispatch_tool
+from .chat_tools_v2 import TOOL_DESCRIPTIONS, dispatch_tool_v2
 
 
 app = FastAPI(title="AutoRE Backend")
@@ -750,13 +750,10 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
-    """Interactive chat endpoint.
+    """Interactive chat endpoint with 2-phase tool calling.
 
-    Supports:
-    - OpenAI-compatible APIs via OPENAI_BASE_URL
-    - Anthropic Messages API via ANTHROPIC_API_KEY
-
-    Tool calling is supported for basic RE operations (strings/functions/context/navigation).
+    Phase 1: LLM selects tools to use (JSON output)
+    Phase 2: Execute tools and generate final answer
     """
 
     job_id = req.job_id
@@ -766,12 +763,8 @@ async def chat(req: ChatRequest):
 
     provider = (req.provider or os.getenv("AUTORE_CHAT_PROVIDER") or "openai").strip().lower()
 
-    tool_results: list[dict] = []
-    ui_actions: list[dict] = []
-
     # Build history list
     hist = [m.model_dump() for m in (req.history or [])]
-    hist.append({"role": "user", "content": user_msg})
 
     if provider in ("openai", "openai-compatible", "oai"):
         openai_base = req.base_url or os.getenv("OPENAI_BASE_URL")
@@ -780,40 +773,85 @@ async def chat(req: ChatRequest):
             raise HTTPException(400, "OPENAI_BASE_URL is not set (Settings or .env)")
 
         model = req.model or os.getenv("OPENAI_MODEL_DEFAULT", "gpt-oss-120b")
-        messages = build_messages_with_job_context(hist, settings.work_dir, job_id)
-        # Disable tools for now - all context is in system prompt
-        tools = None
 
-        resp = call_openai_compatible(
+        # ===== Phase 1: Tool Selection =====
+        tool_selection_prompt = SYSTEM_PROMPT_TOOL_SELECTION + "\n\n" + TOOL_DESCRIPTIONS
+        tool_selection_messages = [{"role": "system", "content": tool_selection_prompt}]
+        
+        # Add history
+        for m in hist:
+            role = m.get("role")
+            if role in ("user", "assistant"):
+                tool_selection_messages.append({"role": role, "content": m.get("content", "")})
+        
+        # Add current user message
+        tool_selection_messages.append({"role": "user", "content": user_msg})
+
+        resp1 = call_openai_compatible(
             base_url=openai_base,
             api_key=openai_key,
             model=model,
-            messages=messages,
-            tools=tools,
+            messages=tool_selection_messages,
+            tools=None,
             tool_choice=None,
         )
 
-        choice = (resp.get("choices") or [{}])[0]
-        msg = choice.get("message") or {}
-        reply = (msg.get("content") or "").strip() or "(no response)"
-        return {"job_id": job_id, "model": model, "provider": provider, "reply": reply, "tool_results": tool_results, "ui_actions": ui_actions}
+        choice1 = (resp1.get("choices") or [{}])[0]
+        msg1 = choice1.get("message") or {}
+        tool_selection_text = (msg1.get("content") or "").strip()
+
+        # Parse JSON
+        tool_calls_data = {"tool_calls": []}
+        try:
+            tool_calls_data = json.loads(tool_selection_text)
+        except Exception:
+            # If JSON parsing fails, assume no tools needed
+            pass
+
+        tool_calls = tool_calls_data.get("tool_calls", [])
+        tool_results: list[dict] = []
+
+        # ===== Phase 2: Execute Tools =====
+        if tool_calls:
+            for tc in tool_calls:
+                tool_name = tc.get("tool")
+                tool_args = tc.get("args", {})
+                try:
+                    result = dispatch_tool_v2(settings.work_dir, job_id, tool_name, tool_args)
+                    tool_results.append({"tool": tool_name, "args": tool_args, "result": result})
+                except Exception as e:
+                    tool_results.append({"tool": tool_name, "args": tool_args, "error": str(e)})
+
+        # ===== Phase 3: Final Answer =====
+        final_answer_messages = [{"role": "system", "content": SYSTEM_PROMPT_FINAL_ANSWER}]
+        
+        # Add history
+        for m in hist:
+            role = m.get("role")
+            if role in ("user", "assistant"):
+                final_answer_messages.append({"role": role, "content": m.get("content", "")})
+        
+        # Add current user message + tool results
+        user_content_with_tools = f"User: {user_msg}\n\nTool Results:\n{json.dumps(tool_results, ensure_ascii=False, indent=2)}"
+        final_answer_messages.append({"role": "user", "content": user_content_with_tools})
+
+        resp2 = call_openai_compatible(
+            base_url=openai_base,
+            api_key=openai_key,
+            model=model,
+            messages=final_answer_messages,
+            tools=None,
+            tool_choice=None,
+        )
+
+        choice2 = (resp2.get("choices") or [{}])[0]
+        msg2 = choice2.get("message") or {}
+        reply = (msg2.get("content") or "").strip() or "(no response)"
+
+        return {"job_id": job_id, "model": model, "provider": provider, "reply": reply, "tool_results": tool_results, "ui_actions": []}
 
     if provider in ("anthropic", "claude"):
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise HTTPException(400, "ANTHROPIC_API_KEY is not set (.env)")
-
-        model = req.model or os.getenv("ANTHROPIC_MODEL_DEFAULT", "claude-sonnet-4-5")
-        # Build messages with full job context, no tools
-        system_prompt, messages = build_anthropic_messages_with_job_context(hist, settings.work_dir, job_id)
-        
-        resp = call_anthropic_messages(api_key=api_key, model=model, messages=messages, tools=None, system_prompt=system_prompt)
-        blocks = resp.get("content") or []
-        
-        # Extract text reply
-        text_parts = [b.get("text") for b in blocks if isinstance(b, dict) and b.get("type") == "text"]
-        reply = ("\n".join([t for t in text_parts if t]) or "(no response)").strip()
-        return {"job_id": job_id, "model": model, "provider": provider, "reply": reply, "tool_results": tool_results, "ui_actions": ui_actions}
+        raise HTTPException(400, "Anthropic provider not yet implemented for v2 tools")
 
     raise HTTPException(400, f"Unknown provider: {provider}")
 

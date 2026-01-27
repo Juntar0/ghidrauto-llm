@@ -7,10 +7,41 @@ from typing import Any
 
 import httpx
 
+__all__ = [
+    "SYSTEM_PROMPT_TOOL_SELECTION",
+    "SYSTEM_PROMPT_FINAL_ANSWER",
+    "build_messages",
+    "build_anthropic_messages",
+    "call_openai_compatible",
+    "call_anthropic_messages",
+]
 
-SYSTEM_PROMPT = """You are an interactive reverse-engineering assistant.
-Answer questions based on the provided binary information (functions, strings, decompiled code).
-Be concise, concrete, and helpful.
+SYSTEM_PROMPT_TOOL_SELECTION = """You are a reverse-engineering assistant with access to tools.
+
+When the user asks a question, you must:
+1. Decide which tool(s) to use
+2. Return ONLY a JSON object (no extra text) in this format:
+
+{
+  "tool_calls": [
+    {"tool": "search_functions", "args": {"query": "main"}},
+    {"tool": "get_function_code", "args": {"function_id": "FUN_00401000", "view": "decompiler"}}
+  ]
+}
+
+If you need to answer without tools (e.g., general question), return:
+{
+  "tool_calls": []
+}
+
+DO NOT include any text outside the JSON object.
+"""
+
+SYSTEM_PROMPT_FINAL_ANSWER = """You are a reverse-engineering assistant.
+
+The user asked a question, and tool results are provided below.
+Based on these results, provide a clear, concise answer in Japanese.
+Quote relevant details from the tool results.
 """
 
 
