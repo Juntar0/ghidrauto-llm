@@ -618,12 +618,19 @@ export default function App() {
   const [showChat, setShowChat] = useState<boolean>(false)
   const [chatMinimized, setChatMinimized] = useState<boolean>(false)
   const [chatPosition, setChatPosition] = useState<{ x: number; y: number }>({ x: 20, y: 20 })
-  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; timestamp: string }>>([])
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; timestamp: string; debug?: any }>>([])
   const [chatInput, setChatInput] = useState<string>('')
   const [chatLoading, setChatLoading] = useState<boolean>(false)
   const [chatProvider, setChatProvider] = useLocalStorageState<'openai' | 'anthropic'>('autore.chat.provider', 'openai')
   const [chatModel, setChatModel] = useLocalStorageState<string>('autore.chat.model', '')
   const [chatError, setChatError] = useState<string | null>(null)
+  const chatMessagesEndRef = useRef<HTMLDivElement>(null)
+  
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
+  
   const [stringQuery, setStringQuery] = useState<string>('')
   const [stringMinLen, setStringMinLen] = useState<number>(0)
   const [stringMaxLen, setStringMaxLen] = useState<number>(0)
@@ -3246,6 +3253,20 @@ export default function App() {
                       onChange={(e) => setChatModel(e.target.value)}
                       disabled={chatLoading}
                     />
+                    <button
+                      className='smallBtn'
+                      onClick={() => {
+                        if (confirm('Clear chat history?')) {
+                          setChatMessages([])
+                          setChatError(null)
+                        }
+                      }}
+                      disabled={chatLoading}
+                      style={{ padding: '6px 10px', borderRadius: 10 }}
+                      title='Clear chat history'
+                    >
+                      🗑️
+                    </button>
                   </div>
                   {chatError ? (
                     <div style={{ marginTop: 8, color: 'rgba(255,96,96,0.9)', fontSize: 12, whiteSpace: 'pre-wrap' }}>
@@ -3275,11 +3296,22 @@ export default function App() {
                     }}
                   >
                     <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                    {msg.debug && msg.debug.tool_count > 0 && (
+                      <div style={{ marginTop: 8, padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: 6, fontSize: 11 }}>
+                        <div className='secondary' style={{ fontWeight: 600, marginBottom: 4 }}>🔧 Tools used ({msg.debug.tool_count}):</div>
+                        {msg.debug.tool_calls_requested.map((tc: any, idx: number) => (
+                          <div key={idx} className='secondary' style={{ fontFamily: 'monospace', fontSize: 10 }}>
+                            • {tc.tool}({JSON.stringify(tc.args).slice(0, 60)}{JSON.stringify(tc.args).length > 60 ? '...' : ''})
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className='secondary' style={{ fontSize: 10, marginTop: 6 }}>
                       {new Date(msg.timestamp).toLocaleTimeString()}
                     </div>
                   </div>
                 ))}
+                <div ref={chatMessagesEndRef} />
                 {chatLoading && (
                   <div style={{ alignSelf: 'flex-start', color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>
                     Thinking...
@@ -3333,7 +3365,8 @@ export default function App() {
 
                             const reply = String(data?.reply ?? '')
                             const ts = new Date().toISOString()
-                            setChatMessages((prev) => [...prev, { role: 'assistant', content: reply || '(no response)', timestamp: ts }])
+                            const debug = data?.debug || null
+                            setChatMessages((prev) => [...prev, { role: 'assistant', content: reply || '(no response)', timestamp: ts, debug }])
 
                             // Apply UI actions (e.g., navigate)
                             const actions = Array.isArray(data?.ui_actions) ? data.ui_actions : []
@@ -3390,7 +3423,8 @@ export default function App() {
 
                           const reply = String(data?.reply ?? '')
                           const ts = new Date().toISOString()
-                          setChatMessages((prev) => [...prev, { role: 'assistant', content: reply || '(no response)', timestamp: ts }])
+                          const debug = data?.debug || null
+                          setChatMessages((prev) => [...prev, { role: 'assistant', content: reply || '(no response)', timestamp: ts, debug }])
 
                           const actions = Array.isArray(data?.ui_actions) ? data.ui_actions : []
                           for (const a of actions) {

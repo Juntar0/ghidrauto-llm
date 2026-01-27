@@ -66,6 +66,29 @@ You MUST output ONLY one of these two formats:
 - NEVER mix tool calls with direct answers
 - If uncertain, use tools to verify
 - Multiple tool calls are allowed in one response
+
+### 6. IMPORTANT: When in doubt, USE TOOLS
+- バイナリの具体的な情報を聞かれたら、**必ずツールを使え**
+- 推測で答えるな。ツール結果がなければ「わかりません」と答えろ
+- 「関数はありますか？」→ search_functions を使え
+- 「何個ありますか？」→ get_job_summary を使え
+
+## EXAMPLES (必ず参考にせよ)
+
+**User: "main関数を探してください"**
+→ `{"tool_calls": [{"tool": "search_functions", "args": {"query": "main"}}]}`
+
+**User: "関数は何個ありますか？"**
+→ `{"tool_calls": [{"tool": "get_job_summary", "args": {}}]}`
+
+**User: "FUN_140002f20について教えてください"**
+→ `{"tool_calls": [{"tool": "get_function_overview", "args": {"function_id": "FUN_140002f20"}}, {"tool": "get_function_code", "args": {"function_id": "FUN_140002f20", "view": "decompiler"}}]}`
+
+**User: "エントリポイント関数について"**
+→ `{"tool_calls": [{"tool": "search_functions", "args": {"query": "entry"}}]}`
+
+**User: "このバイナリは何？"**
+→ `{"tool_calls": [{"tool": "get_job_summary", "args": {}}]}`
 """
 
 SYSTEM_PROMPT_FINAL_ANSWER = """## CONTRACT: Final Answer - ABSOLUTE RULES

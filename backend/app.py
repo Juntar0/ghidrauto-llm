@@ -869,7 +869,21 @@ async def chat(req: ChatRequest):
         msg2 = choice2.get("message") or {}
         reply = (msg2.get("content") or "").strip() or "(no response)"
 
-        return {"job_id": job_id, "model": model, "provider": provider, "reply": reply, "tool_results": tool_results, "ui_actions": []}
+        # Build debug info
+        debug_info = {
+            "tool_calls_requested": [{"tool": tc.get("tool"), "args": tc.get("args")} for tc in tool_calls],
+            "tool_count": len(tool_calls),
+        }
+
+        return {
+            "job_id": job_id,
+            "model": model,
+            "provider": provider,
+            "reply": reply,
+            "tool_results": tool_results,
+            "ui_actions": [],
+            "debug": debug_info,
+        }
 
     if provider in ("anthropic", "claude"):
         raise HTTPException(400, "Anthropic provider not yet implemented for v2 tools")
