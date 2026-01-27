@@ -30,7 +30,9 @@ from .storage import (
 
 from .chat_llm import (
     build_anthropic_messages,
+    build_anthropic_messages_with_job_context,
     build_messages,
+    build_messages_with_job_context,
     call_anthropic_messages,
     call_openai_compatible,
 )
@@ -778,59 +780,23 @@ async def chat(req: ChatRequest):
             raise HTTPException(400, "OPENAI_BASE_URL is not set (Settings or .env)")
 
         model = req.model or os.getenv("OPENAI_MODEL_DEFAULT", "gpt-oss-120b")
-        messages = build_messages(hist)
-        tools = available_tools_schema()
+        messages = build_messages_with_job_context(hist, settings.work_dir, job_id)
+        # Disable tools for now - all context is in system prompt
+        tools = None
 
-        for _ in range(3):
-            resp = call_openai_compatible(
-                base_url=openai_base,
-                api_key=openai_key,
-                model=model,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto",
-            )
+        resp = call_openai_compatible(
+            base_url=openai_base,
+            api_key=openai_key,
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice=None,
+        )
 
-            choice = (resp.get("choices") or [{}])[0]
-            msg = choice.get("message") or {}
-
-            tool_calls = msg.get("tool_calls") or []
-            if tool_calls:
-                messages.append(
-                    {"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls}
-                )
-                for tc in tool_calls:
-                    fn = (tc.get("function") or {})
-                    name = fn.get("name")
-                    args_raw = fn.get("arguments") or "{}"
-                    try:
-                        args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
-                    except Exception:
-                        args = {}
-
-                    try:
-                        result = dispatch_tool(settings.work_dir, job_id, name, args)
-                    except Exception as e:
-                        result = {"error": str(e), "tool": name, "args": args}
-
-                    tool_results.append({"tool": name, "args": args, "result": result})
-                    if isinstance(result, dict) and result.get("action") == "navigate":
-                        ui_actions.append(result)
-
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tc.get("id"),
-                            "name": name,
-                            "content": json.dumps(result, ensure_ascii=False),
-                        }
-                    )
-                continue
-
-            reply = (msg.get("content") or "").strip() or "(no response)"
-            return {"job_id": job_id, "model": model, "provider": provider, "reply": reply, "tool_results": tool_results, "ui_actions": ui_actions}
-
-        return {"job_id": job_id, "model": model, "provider": provider, "reply": "Tool loop limit reached. Try a more specific request.", "tool_results": tool_results, "ui_actions": ui_actions}
+        choice = (resp.get("choices") or [{}])[0]
+        msg = choice.get("message") or {}
+        reply = (msg.get("content") or "").strip() or "(no response)"
+        return {"job_id": job_id, "model": model, "provider": provider, "reply": reply, "tool_results": tool_results, "ui_actions": ui_actions}
 
     if provider in ("anthropic", "claude"):
         api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -838,48 +804,16 @@ async def chat(req: ChatRequest):
             raise HTTPException(400, "ANTHROPIC_API_KEY is not set (.env)")
 
         model = req.model or os.getenv("ANTHROPIC_MODEL_DEFAULT", "claude-sonnet-4-5")
-        messages = build_anthropic_messages(hist)
-        tools = available_tools_anthropic()
-
-        for _ in range(3):
-            resp = call_anthropic_messages(api_key=api_key, model=model, messages=messages, tools=tools)
-            blocks = resp.get("content") or []
-
-            # record assistant blocks
-            messages.append({"role": "assistant", "content": blocks})
-
-            tool_uses = [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_use"]
-            if tool_uses:
-                # execute tools and append a single user message containing tool_result blocks
-                results_blocks = []
-                for tu in tool_uses:
-                    name = tu.get("name")
-                    args = tu.get("input") or {}
-                    try:
-                        result = dispatch_tool(settings.work_dir, job_id, name, args)
-                    except Exception as e:
-                        result = {"error": str(e), "tool": name, "args": args}
-
-                    tool_results.append({"tool": name, "args": args, "result": result})
-                    if isinstance(result, dict) and result.get("action") == "navigate":
-                        ui_actions.append(result)
-
-                    results_blocks.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tu.get("id"),
-                            "content": json.dumps(result, ensure_ascii=False),
-                        }
-                    )
-                messages.append({"role": "user", "content": results_blocks})
-                continue
-
-            # no tool use => final text reply
-            text_parts = [b.get("text") for b in blocks if isinstance(b, dict) and b.get("type") == "text"]
-            reply = ("\n".join([t for t in text_parts if t]) or "(no response)").strip()
-            return {"job_id": job_id, "model": model, "provider": provider, "reply": reply, "tool_results": tool_results, "ui_actions": ui_actions}
-
-        return {"job_id": job_id, "model": model, "provider": provider, "reply": "Tool loop limit reached. Try a more specific request.", "tool_results": tool_results, "ui_actions": ui_actions}
+        # Build messages with full job context, no tools
+        system_prompt, messages = build_anthropic_messages_with_job_context(hist, settings.work_dir, job_id)
+        
+        resp = call_anthropic_messages(api_key=api_key, model=model, messages=messages, tools=None, system_prompt=system_prompt)
+        blocks = resp.get("content") or []
+        
+        # Extract text reply
+        text_parts = [b.get("text") for b in blocks if isinstance(b, dict) and b.get("type") == "text"]
+        reply = ("\n".join([t for t in text_parts if t]) or "(no response)").strip()
+        return {"job_id": job_id, "model": model, "provider": provider, "reply": reply, "tool_results": tool_results, "ui_actions": ui_actions}
 
     raise HTTPException(400, f"Unknown provider: {provider}")
 

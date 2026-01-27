@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 
 SYSTEM_PROMPT = """You are an interactive reverse-engineering assistant.
-You can ask for tools to inspect functions/strings and to navigate the UI.
-When you call a tool, use it to gather evidence before making claims.
-Be concise and concrete.
+Answer questions based on the provided binary information (functions, strings, decompiled code).
+Be concise, concrete, and helpful.
 """
 
 
@@ -61,12 +61,92 @@ def build_messages(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return msgs
 
 
+def build_messages_with_job_context(
+    history: list[dict[str, Any]], work_dir: str, job_id: str
+) -> list[dict[str, Any]]:
+    """Build messages with full job context (functions, strings, decomp) in system prompt."""
+    
+    # Load job data
+    job_path = Path(work_dir) / job_id
+    functions_file = job_path / "functions.json"
+    strings_file = job_path / "strings.json"
+    decomp_dir = job_path / "decomp"
+    
+    # Build context
+    context_parts = [SYSTEM_PROMPT, "\n## Binary Context\n"]
+    
+    # Functions list
+    if functions_file.exists():
+        try:
+            with open(functions_file, "r", encoding="utf-8") as f:
+                functions = json.load(f)
+                if functions:
+                    context_parts.append(f"\n### Functions ({len(functions)} total)\n")
+                    # Show first 100 functions to avoid token limit
+                    for fn in functions[:100]:
+                        name = fn.get("name", "?")
+                        addr = fn.get("address", "?")
+                        context_parts.append(f"- {name} @ {addr}\n")
+                    if len(functions) > 100:
+                        context_parts.append(f"... and {len(functions) - 100} more functions\n")
+        except Exception:
+            pass
+    
+    # Strings
+    if strings_file.exists():
+        try:
+            with open(strings_file, "r", encoding="utf-8") as f:
+                strings = json.load(f)
+                if strings:
+                    context_parts.append(f"\n### Strings ({len(strings)} total)\n")
+                    # Show first 50 strings
+                    for s in strings[:50]:
+                        val = s.get("value", "")
+                        addr = s.get("address", "?")
+                        if len(val) > 100:
+                            val = val[:100] + "..."
+                        context_parts.append(f"- {addr}: {val}\n")
+                    if len(strings) > 50:
+                        context_parts.append(f"... and {len(strings) - 50} more strings\n")
+        except Exception:
+            pass
+    
+    # Decompiled code samples (first 3 functions)
+    if decomp_dir.exists():
+        try:
+            decomp_files = sorted(decomp_dir.glob("*.json"))[:3]
+            if decomp_files:
+                context_parts.append("\n### Sample Decompiled Code\n")
+                for df in decomp_files:
+                    with open(df, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        fn_name = data.get("function_name", df.stem)
+                        code = data.get("pseudocode", "")
+                        if code:
+                            context_parts.append(f"\n#### {fn_name}\n```c\n{code[:500]}\n```\n")
+        except Exception:
+            pass
+    
+    system_content = "".join(context_parts)
+    
+    # Build messages
+    msgs: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
+    for m in history:
+        role = (m.get("role") or "").strip()
+        if role not in ("user", "assistant"):
+            continue
+        msgs.append({"role": role, "content": m.get("content") or ""})
+    
+    return msgs
+
+
 def call_anthropic_messages(
     *,
     api_key: str,
     model: str,
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,
+    system_prompt: str | None = None,
     max_tokens: int = 1200,
     timeout: int = 120,
 ) -> dict[str, Any]:
@@ -79,7 +159,7 @@ def call_anthropic_messages(
 
     payload: dict[str, Any] = {
         "model": model,
-        "system": SYSTEM_PROMPT,
+        "system": system_prompt or SYSTEM_PROMPT,
         "messages": messages,
         "max_tokens": max_tokens,
     }
@@ -107,3 +187,80 @@ def build_anthropic_messages(history: list[dict[str, Any]]) -> list[dict[str, An
         content = m.get("content") or ""
         out.append({"role": role, "content": [{"type": "text", "text": str(content)}]})
     return out
+
+
+def build_anthropic_messages_with_job_context(
+    history: list[dict[str, Any]], work_dir: str, job_id: str
+) -> tuple[str, list[dict[str, Any]]]:
+    """Build Anthropic messages with full job context. Returns (system_prompt, messages)."""
+    
+    # Reuse the same context building logic from OpenAI version
+    job_path = Path(work_dir) / job_id
+    functions_file = job_path / "functions.json"
+    strings_file = job_path / "strings.json"
+    decomp_dir = job_path / "decomp"
+    
+    context_parts = [SYSTEM_PROMPT, "\n## Binary Context\n"]
+    
+    # Functions list
+    if functions_file.exists():
+        try:
+            with open(functions_file, "r", encoding="utf-8") as f:
+                functions = json.load(f)
+                if functions:
+                    context_parts.append(f"\n### Functions ({len(functions)} total)\n")
+                    for fn in functions[:100]:
+                        name = fn.get("name", "?")
+                        addr = fn.get("address", "?")
+                        context_parts.append(f"- {name} @ {addr}\n")
+                    if len(functions) > 100:
+                        context_parts.append(f"... and {len(functions) - 100} more functions\n")
+        except Exception:
+            pass
+    
+    # Strings
+    if strings_file.exists():
+        try:
+            with open(strings_file, "r", encoding="utf-8") as f:
+                strings = json.load(f)
+                if strings:
+                    context_parts.append(f"\n### Strings ({len(strings)} total)\n")
+                    for s in strings[:50]:
+                        val = s.get("value", "")
+                        addr = s.get("address", "?")
+                        if len(val) > 100:
+                            val = val[:100] + "..."
+                        context_parts.append(f"- {addr}: {val}\n")
+                    if len(strings) > 50:
+                        context_parts.append(f"... and {len(strings) - 50} more strings\n")
+        except Exception:
+            pass
+    
+    # Decompiled code samples
+    if decomp_dir.exists():
+        try:
+            decomp_files = sorted(decomp_dir.glob("*.json"))[:3]
+            if decomp_files:
+                context_parts.append("\n### Sample Decompiled Code\n")
+                for df in decomp_files:
+                    with open(df, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        fn_name = data.get("function_name", df.stem)
+                        code = data.get("pseudocode", "")
+                        if code:
+                            context_parts.append(f"\n#### {fn_name}\n```c\n{code[:500]}\n```\n")
+        except Exception:
+            pass
+    
+    system_prompt = "".join(context_parts)
+    
+    # Build messages (Anthropic format)
+    out: list[dict[str, Any]] = []
+    for m in history:
+        role = (m.get("role") or "").strip()
+        if role not in ("user", "assistant"):
+            continue
+        content = m.get("content") or ""
+        out.append({"role": role, "content": [{"type": "text", "text": str(content)}]})
+    
+    return system_prompt, out
