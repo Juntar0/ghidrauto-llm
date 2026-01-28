@@ -767,6 +767,8 @@ export default function App() {
   // Desktop pane splits (0..1): splitA between Disasm|Ghidra, splitB between Ghidra|AI
   const [splitA, setSplitA] = useLocalStorageState<number>('autore.splitA', 0.33)
   const [splitB, setSplitB] = useLocalStorageState<number>('autore.splitB', 0.67)
+  const [disasmCollapsed, setDisasmCollapsed] = useLocalStorageState<boolean>('autore.disasmCollapsed', false)
+  const [disasmSplitPrev, setDisasmSplitPrev] = useLocalStorageState<number>('autore.disasmSplitPrev', 0.33)
 
   const [fnQuery, setFnQuery] = useLocalStorageState<string>('autore.fnQuery', '')
   const [sortKey, setSortKey] = useLocalStorageState<SortKey>('autore.sortKey', 'entry')
@@ -1591,6 +1593,20 @@ export default function App() {
     ? undefined
     : ({ gridTemplateColumns: `${splitA}fr 6px ${splitB - splitA}fr 6px ${1 - splitB}fr` } as any)
 
+  // Keep splitA consistent with disasmCollapsed
+  useEffect(() => {
+    if (isMobile) return
+    if (disasmCollapsed) {
+      // Save previous split and collapse to a thin strip
+      if (splitA > 0.08) setDisasmSplitPrev(splitA)
+      if (splitA !== 0.05) setSplitA(0.05)
+    } else {
+      // Restore previous split if it was collapsed
+      if (splitA < 0.08) setSplitA(disasmSplitPrev || 0.33)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disasmCollapsed])
+
   const sidebarStyle = isMobile
     ? ({ width: clamp(sidebarWidth, 280, 500), display: mobileSidebarOpen ? 'flex' : 'none' } as any)
     : ({ width: leftW } as any)
@@ -2376,13 +2392,27 @@ export default function App() {
 
         <div className='panes' style={panesStyle}>
           {/* Disasm */}
-          <section className='pane' style={isMobile && mobileTab !== 'disasm' ? { display: 'none' } : undefined}>
+          <section
+            className={`pane ${!isMobile && disasmCollapsed ? 'paneCollapsed' : ''}`}
+            style={isMobile && mobileTab !== 'disasm' ? { display: 'none' } : undefined}
+          >
             <div className='paneHeader'>
-              <h4>
-                Disassembly
-                {disasmRows.length > 0 && <span className='secondary' style={{ fontSize: 12, marginLeft: 8 }}>({disasmRows.length} lines)</span>}
+              <h4 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  className='tinyBtn'
+                  title={disasmCollapsed ? 'Expand Disassembly' : 'Collapse Disassembly'}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setDisasmCollapsed(!disasmCollapsed)
+                  }}
+                  style={{ padding: '2px 8px' }}
+                >
+                  {disasmCollapsed ? '▸' : '◂'}
+                </button>
+                <span>Disassembly</span>
+                {disasmRows.length > 0 && <span className='secondary' style={{ fontSize: 12 }}>({disasmRows.length} lines)</span>}
               </h4>
-              <span className='sub'>{selectedFn?.entry ? `@ ${selectedFn.entry}` : selected ?? ''}</span>
+              {!disasmCollapsed ? <span className='sub'>{selectedFn?.entry ? `@ ${selectedFn.entry}` : selected ?? ''}</span> : <span className='sub' />}
             </div>
             <div className='paneBody'>
               <div className='disasm'>

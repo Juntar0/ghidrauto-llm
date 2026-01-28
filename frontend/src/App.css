@@ -254,6 +254,15 @@
   overflow: hidden;
 }
 
+/* Collapse Disassembly pane: keep header, hide body */
+.paneCollapsed .paneBody {
+  display: none;
+}
+
+.paneCollapsed .paneHeader {
+  justify-content: flex-start;
+}
+
 .paneHeader {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
