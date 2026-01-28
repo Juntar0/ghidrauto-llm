@@ -2135,16 +2135,17 @@ export default function App() {
                 }
                 
                 if (selected) {
-                  return (
+                  const dn = displayName(selected)
+                  // Avoid overly-long unbroken titles that can force a fixed page width.
+                  // Also hide noisy init functions from the title.
+                  const showTitle = dn && !dn.startsWith('__dyn_tls_init')
+                  return showTitle ? (
                     <>
-                      <strong style={{ color: 'rgba(255,255,255,0.92)' }}>{displayName(selected)}</strong>
+                      <strong style={{ color: 'rgba(255,255,255,0.92)' }}>{dn}</strong>
                       <span style={{ marginLeft: 10 }}>{selectedFn?.entry ? `@ ${selectedFn.entry}` : ''}</span>
-                      {analysis?.sample?.path ? (
-                        <span style={{ marginLeft: 10, color: 'rgba(255,255,255,0.55)' }}>
-                          {analysis.sample.path}
-                        </span>
-                      ) : null}
                     </>
+                  ) : (
+                    <span className='secondary'> </span>
                   )
                 }
                 
