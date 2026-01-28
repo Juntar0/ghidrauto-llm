@@ -651,6 +651,7 @@ export default function App() {
   })())
 
   const [winApiOnly, setWinApiOnly] = useLocalStorageState<boolean>('autore.winApiOnly', false)
+  const [winApiShowAll, setWinApiShowAll] = useLocalStorageState<boolean>('autore.winApiShowAll', false)
 
   const [sidebarWidth, setSidebarWidth] = useLocalStorageState<number>('autore.sidebarWidth', 320)
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorageState<boolean>('autore.sidebarCollapsed', false)
@@ -955,6 +956,14 @@ export default function App() {
     for (const x of out) byId.set(x.id, x)
     return Array.from(byId.values()).slice(0, 10)
   }, [functions, funcById, entryFunctionId])
+
+  const winApiFunctions = useMemo(() => {
+    const arr = (functions as any[])
+      .filter((f) => Boolean((f as any).is_winapi))
+      .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)))
+
+    return winApiShowAll ? arr : arr.slice(0, 50)
+  }, [functions, winApiShowAll])
 
   async function loadAnalysis(id: string) {
     setAnalysis(null)
@@ -1945,6 +1954,49 @@ export default function App() {
                 ) : (
                   <div className='secondary' style={{ marginBottom: 10 }}>
                     No entrypoint data.
+                  </div>
+                )}
+
+                {/* Win API */}
+                <div className='sectionTitleRow'>
+                  <strong>Win API</strong>
+                  <span className='badge'>{(analysis?.functions ?? []).filter((f: any) => Boolean((f as any).is_winapi)).length}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '6px 0 8px 0' }}>
+                  <label className='secondary' style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input type='checkbox' checked={winApiShowAll} onChange={(e) => setWinApiShowAll(e.target.checked)} />
+                    show all
+                  </label>
+                  <span className='secondary'>{winApiShowAll ? 'all' : 'top 50'}</span>
+                </div>
+                {winApiFunctions.length ? (
+                  <div className='functionList' style={{ marginBottom: 10 }}>
+                    {winApiFunctions.map((f: any) => (
+                      <div
+                        key={`winapi-${f.id}`}
+                        className={`fnItem ${selected === f.id ? 'fnItemSelected' : ''}`}
+                        onClick={() => {
+                          navigateTo(f.id)
+                          if (isMobile) {
+                            setMobileSidebarOpen(false)
+                            setMobileTab('disasm')
+                          }
+                        }}
+                        title={f.dll ? `dll: ${f.dll}` : 'Win API'}
+                      >
+                        <div className='fnMeta'>
+                          <div className='fnName'>{f.name ?? f.id}</div>
+                          <div className='fnSub'>
+                            <span style={{ fontFamily: 'monospace' }}>{f.id}</span>
+                            {f.dll ? <span>{f.dll}</span> : null}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className='secondary' style={{ marginBottom: 10 }}>
+                    No Win API functions.
                   </div>
                 )}
               </div>
