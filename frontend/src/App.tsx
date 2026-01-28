@@ -2528,10 +2528,15 @@ export default function App() {
                                   ? `0x${addrValue.toString(16).toUpperCase()}`
                                   : (firstLoc?.type === 'no address' ? '(file-level)' : 'N/A');
                                 
-                                // Convert address to function ID (e.g., 0x401234 -> FUN_00401234)
-                                const functionId = addrValue 
-                                  ? `FUN_${addrValue.toString(16).toUpperCase().padStart(8, '0')}`
+                                // Find function by address (entry field matches)
+                                const addrHex = addrValue ? addrValue.toString(16).toUpperCase().padStart(8, '0') : null;
+                                const matchingFunc = addrHex && analysis?.functions 
+                                  ? analysis.functions.find((f: any) => {
+                                      const fEntry = String(f.entry || '').toUpperCase().replace(/^0X/, '');
+                                      return fEntry === addrHex;
+                                    })
                                   : null;
+                                const functionId = matchingFunc?.id || null;
                                 
                                 return (
                                   <div key={idx} style={{ fontSize: '12px', fontFamily: 'monospace', marginBottom: 4 }}>
