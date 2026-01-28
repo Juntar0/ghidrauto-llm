@@ -13,6 +13,13 @@ import ReactFlow, {
   type NodeProps,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
+import hljs from 'highlight.js/lib/core'
+import cpp from 'highlight.js/lib/languages/cpp'
+import x86asm from 'highlight.js/lib/languages/x86asm'
+import 'highlight.js/styles/github-dark.css'
+
+hljs.registerLanguage('cpp', cpp)
+hljs.registerLanguage('x86asm', x86asm)
 
 type Analysis = {
   sample?: { entry_point?: string; image_base?: string; path?: string }
@@ -1470,6 +1477,7 @@ export default function App() {
     return lines.map((line, i) => ({ ln: i + 1, text: line }))
   }, [ghidraDecomp])
 
+  // @ts-ignore - unused after syntax highlighting
   function renderGhidraLine(line: string, ln: number) {
     const matches: Array<{ start: number; end: number; text: string; fid: string }> = []
 
@@ -1680,6 +1688,7 @@ export default function App() {
 
     const lines = src.split(/\r?\n/)
 
+    // @ts-ignore - unused after syntax highlighting
     const renderLine = (line: string, ln: number) => {
       const matches: Array<{ start: number; end: number; text: string; fid: string }> = []
 
@@ -1774,7 +1783,12 @@ export default function App() {
               }}
             >
               <div className='pseudoCodeLn'>{ln}</div>
-              <div className='pseudoCodeContent'>{renderLine(line, ln)}</div>
+              <div
+                className='pseudoCodeContent'
+                dangerouslySetInnerHTML={{
+                  __html: hljs.highlight(line, { language: 'cpp' }).value
+                }}
+              />
             </div>
           )
         })}
@@ -2340,7 +2354,12 @@ export default function App() {
                       >
                         <div className='disasmLn'>{r.ln}</div>
                         <div className='disasmAddr'>{r.addr}</div>
-                        <div className='disasmInst'>{r.inst}</div>
+                        <div
+                          className='disasmInst'
+                          dangerouslySetInnerHTML={{
+                            __html: hljs.highlight(r.inst, { language: 'x86asm' }).value
+                          }}
+                        />
                       </div>
                     )
                   })
@@ -2384,7 +2403,12 @@ export default function App() {
                         }}
                       >
                         <div className='ghidraLn'>{r.ln}</div>
-                        <div className='ghidraContent'>{renderGhidraLine(r.text, r.ln)}</div>
+                        <div
+                          className='ghidraContent'
+                          dangerouslySetInnerHTML={{
+                            __html: hljs.highlight(r.text, { language: 'cpp' }).value
+                          }}
+                        />
                       </div>
                     )
                   })}
