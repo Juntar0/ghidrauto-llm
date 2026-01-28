@@ -1127,7 +1127,7 @@ export default function App() {
 
     const positions = new Map<string, { x: number; y: number }>()
     const XGAP = 360
-    const YGAP = 220
+    const YGAP = 320
     const depths = Array.from(byDepth.keys()).sort((a, b) => a - b)
     for (const d0 of depths) {
       const ids = byDepth.get(d0) || []
