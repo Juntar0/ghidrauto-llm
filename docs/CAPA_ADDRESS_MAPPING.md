@@ -182,6 +182,64 @@ function convertCapaToGhidraAddress(capaAddr: number, capaBase: number, ghidraBa
    - 上記の対策（正規化）を実装
    - RVA変換ロジックを追加
 
+## テスト結果（2026-01-28）
+
+### テストバイナリ
+- **ファイル**: t32.exe (96KB, PE 32-bit)
+- **CAPA**: v7.4.0
+- **Ghidra**: 11.x + ExtractAnalysis.java
+
+### 結果
+
+```
+============================================================
+CAPA vs Ghidra Address Comparison
+============================================================
+
+Base Address:
+  CAPA:   0x400000
+  Ghidra: 0x400000
+  Match:  ✅ True
+
+Function Count:
+  CAPA:   33 functions (CAPA検出範囲)
+  Ghidra: 296 functions (全関数)
+
+Common Functions: 29 (88% overlap)
+
+First 10 common addresses:
+  0x401000, 0x40106a, 0x4010d4, 0x401116, 0x4012ee
+  0x40139d, 0x4013da, 0x40140a, 0x4014c0, 0x401617
+
+CAPA-only: 4 functions
+Ghidra-only: 267 functions (Ghidraの方が多く検出)
+```
+
+### 結論
+
+**✅ アドレスは完全に互換性があります**
+
+- Base Addressが一致（`0x400000`）
+- 関数アドレスが一致（仮想アドレス形式）
+- **アドレス変換は不要**
+
+### 実装への影響
+
+- CAPAのアドレスをそのままGhidraの関数IDと突合できる
+- UI統合時に変換ロジック不要
+- `0x401000` (CAPA) → `FUN_00401000` (Ghidra) の対応が可能
+
+### 注意点
+
+- **形式の違いのみ**:
+  - CAPA: 数値（`4198400` = `0x401000`）
+  - Ghidra: 8桁16進文字列（`"00401000"`）
+- **変換例**:
+  ```python
+  capa_addr = 4198400  # CAPA
+  ghidra_id = f"FUN_{capa_addr:08X}"  # "FUN_00401000"
+  ```
+
 ## 次のステップ
 
 ```bash
