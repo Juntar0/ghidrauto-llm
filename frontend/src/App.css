@@ -213,7 +213,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .topbarLeft {
@@ -221,7 +221,7 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-  flex: 1 1 420px;
+  flex: 1 1 auto;
 }
 
 .topbarTitle {
@@ -237,11 +237,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1 1 520px;
+  flex: 0 1 auto;
   justify-content: flex-end;
   min-width: 0;
   overflow-x: auto;
-  max-width: 100%;
+  max-width: 60vw;
+  flex-wrap: nowrap;
 }
 
 .topbarRight::-webkit-scrollbar {
