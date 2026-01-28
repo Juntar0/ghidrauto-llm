@@ -932,6 +932,8 @@ def process_request(s: Settings, req: dict) -> None:
                 pass
         return
 
+    is_summary_task = task in ("summarize", "summary", "summarize_function")
+
     _append_log(
         base,
         {
@@ -948,7 +950,6 @@ def process_request(s: Settings, req: dict) -> None:
     disasm_path = base / "extract" / "disasm" / f"{fid}.txt"
     idx_path = base / "ai" / "index.json"
 
-    is_summary_task = task in ("summarize", "summary", "summarize_function")
     out_path = (base / "ai" / "summaries" / f"{fid}.json") if is_summary_task else (base / "ai" / "results" / f"{fid}.json")
 
     lock_path = base / "ai" / "locks" / f"{fid}.lock"
