@@ -566,6 +566,7 @@ export default function App() {
   const [funcSummary, setFuncSummary] = useState<any>(null)
   const [showExeSummary, setShowExeSummary] = useState<boolean>(false)
   const [exeSummary, setExeSummary] = useState<any>(null)
+  const [exeSummaryLogs, setExeSummaryLogs] = useState<any[]>([])
   const [capaData, setCapaData] = useState<any>(null)
   const [mainGuess, setMainGuess] = useState<{ function_id: string; reason?: string } | null>(null)
   const [mainGuessError, setMainGuessError] = useState<string | null>(null)
@@ -982,6 +983,20 @@ export default function App() {
     } catch {
       setExeSummary(null)
       return null
+    }
+  }
+
+  async function loadExeSummaryLogs(id: string) {
+    try {
+      const r = await fetch(`${apiBase}/api/jobs/${id}/debug/logs?n=300`)
+      const j = await r.json().catch(() => null)
+      const lines = Array.isArray(j?.lines) ? j.lines : []
+      const filtered = lines.filter((x: any) => x?.task === 'summarize_exe' || x?.function_id === '__exe__' || String(x?.event || '').includes('exe_summary'))
+      setExeSummaryLogs(filtered)
+      return filtered
+    } catch {
+      setExeSummaryLogs([])
+      return []
     }
   }
 
@@ -2073,7 +2088,10 @@ export default function App() {
                   className={`smallBtn ${showExeSummary ? 'smallBtnActive' : ''}`}
                   onClick={() => {
                     setShowExeSummary((v) => !v)
-                    if (jobId) loadExeSummary(jobId)
+                    if (jobId) {
+                      loadExeSummary(jobId)
+                      loadExeSummaryLogs(jobId)
+                    }
                   }}
                   disabled={!jobId}
                   title='Show / update EXE-level summary'
@@ -3068,7 +3086,10 @@ export default function App() {
                       if (openaiReasoning.trim()) fd.set('openai_reasoning', openaiReasoning.trim())
                     }
                     await fetch(`${apiBase}/api/jobs/${jobId}/summarize_exe`, { method: 'POST', body: fd })
-                    window.setTimeout(() => loadExeSummary(jobId), 800)
+                    window.setTimeout(() => {
+                      loadExeSummary(jobId)
+                      loadExeSummaryLogs(jobId)
+                    }, 800)
                   }}
                   disabled={!jobId}
                   title='Generate/update EXE summary'
@@ -3078,7 +3099,10 @@ export default function App() {
                 <button
                   className='smallBtn'
                   onClick={() => {
-                    if (jobId) loadExeSummary(jobId)
+                    if (jobId) {
+                      loadExeSummary(jobId)
+                      loadExeSummaryLogs(jobId)
+                    }
                   }}
                   disabled={!jobId}
                 >
@@ -3110,6 +3134,29 @@ export default function App() {
                   </div>
                 </>
               )}
+
+              <div style={{ height: 14 }} />
+              <details className='fold' open>
+                <summary className='foldSummary'>Debug logs ({exeSummaryLogs.length})</summary>
+                <div className='foldBody'>
+                  <div className='logBox'>
+                    {(exeSummaryLogs || []).slice(-200).map((x: any, i: number) => (
+                      <div key={i} className='logRow'>
+                        <span className='logTs'>{fmtJst(x?.ts) || ''}</span>
+                        <span className='logEvt'>{String(x?.event ?? '')}</span>
+                        <span className='logMsg'>
+                          {x?.task ? `task=${x.task} ` : ''}
+                          {x?.model ? `model=${x.model} ` : ''}
+                          {x?.status_code ? `status=${x.status_code} ` : ''}
+                          {typeof x?.api_ms === 'number' ? `api_ms=${x.api_ms} ` : ''}
+                          {typeof x?.functions_n === 'number' ? `functions_n=${x.functions_n} ` : ''}
+                          {x?.error ? `error=${x.error}` : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
         </div>

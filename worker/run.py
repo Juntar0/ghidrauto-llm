@@ -775,6 +775,19 @@ def process_request(s: Settings, req: dict) -> None:
         lock_path = base / "ai" / "locks" / "__exe_summary__.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
+        _append_log(
+            base,
+            {
+                "ts": _now_jst_iso(),
+                "job_id": job_id,
+                "function_id": "__exe__",
+                "event": "exe_summary_received",
+                "task": task,
+                "model": model,
+                "enqueued_at": req.get("enqueued_at"),
+            },
+        )
+
         # Lock
         try:
             fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -783,6 +796,18 @@ def process_request(s: Settings, req: dict) -> None:
             return
 
         try:
+            _append_log(
+                base,
+                {
+                    "ts": _now_jst_iso(),
+                    "job_id": job_id,
+                    "function_id": "__exe__",
+                    "event": "exe_summary_started",
+                    "task": task,
+                    "model": model,
+                },
+            )
+
             # Load all function summaries
             summ_dir = base / "ai" / "summaries"
             items = []
@@ -808,6 +833,22 @@ def process_request(s: Settings, req: dict) -> None:
             )
 
             result = None
+
+            _append_log(
+                base,
+                {
+                    "ts": _now_jst_iso(),
+                    "job_id": job_id,
+                    "function_id": "__exe__",
+                    "event": "api_request",
+                    "task": task,
+                    "provider": provider,
+                    "model": model,
+                    "input_chars": min(len(user_text), 45000),
+                },
+            )
+
+            t0 = time.time()
             if provider == 'anthropic':
                 if not s.anthropic_api_key:
                     raise RuntimeError('ANTHROPIC_API_KEY not set')
@@ -824,6 +865,21 @@ def process_request(s: Settings, req: dict) -> None:
                 else:
                     result = call_openai_chat(base_url, api_key, model, user_text, reasoning=reasoning, system_prompt=PROMPT_EXE_SUMMARY_JA)
 
+            _append_log(
+                base,
+                {
+                    "ts": _now_jst_iso(),
+                    "job_id": job_id,
+                    "function_id": "__exe__",
+                    "event": "api_response",
+                    "task": task,
+                    "provider": provider,
+                    "model": model,
+                    "api_ms": int((time.time() - t0) * 1000),
+                    "status_code": (result or {}).get('_status_code'),
+                },
+            )
+
             ok, why = _validate_summary_obj(result or {}, s.guardrail_min_confidence)
             if not ok:
                 raise RuntimeError(f"exe summary invalid: {why}")
@@ -839,9 +895,36 @@ def process_request(s: Settings, req: dict) -> None:
             }
             exe_out.parent.mkdir(parents=True, exist_ok=True)
             _atomic_write(exe_out, payload)
+
+            _append_log(
+                base,
+                {
+                    "ts": _now_jst_iso(),
+                    "job_id": job_id,
+                    "function_id": "__exe__",
+                    "event": "exe_summary_finished",
+                    "task": task,
+                    "status": "ok",
+                    "model": model,
+                    "functions_n": len(items),
+                },
+            )
         except Exception as e:
             exe_out.parent.mkdir(parents=True, exist_ok=True)
             _atomic_write(exe_out, {"status": "error", "error": str(e), "updated_at": _now_jst_iso()})
+            _append_log(
+                base,
+                {
+                    "ts": _now_jst_iso(),
+                    "job_id": job_id,
+                    "function_id": "__exe__",
+                    "event": "exe_summary_finished",
+                    "task": task,
+                    "status": "error",
+                    "model": model,
+                    "error": str(e),
+                },
+            )
         finally:
             try:
                 os.unlink(lock_path)
