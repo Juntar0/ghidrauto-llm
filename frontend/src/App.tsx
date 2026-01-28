@@ -1589,7 +1589,7 @@ export default function App() {
 
   const panesStyle = isMobile
     ? undefined
-    : ({ gridTemplateColumns: `${splitA * 100}% 6px ${(splitB - splitA) * 100}% 6px ${(1 - splitB) * 100}%` } as any)
+    : ({ gridTemplateColumns: `${splitA}fr 6px ${splitB - splitA}fr 6px ${1 - splitB}fr` } as any)
 
   const sidebarStyle = isMobile
     ? ({ width: clamp(sidebarWidth, 280, 500), display: mobileSidebarOpen ? 'flex' : 'none' } as any)
