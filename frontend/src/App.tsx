@@ -3134,21 +3134,70 @@ export default function App() {
                   const nodesRaw = Array.isArray((cfgData as any)?.nodes) ? (cfgData as any).nodes : []
                   const edgesRaw = Array.isArray((cfgData as any)?.edges) ? (cfgData as any).edges : []
 
+                  // simple layout: BFS layers by depth, stagger vertically
+                  const rootId = String((cfgData as any)?.root || selected || '')
+                  const children = new Map<string, string[]>()
+                  for (const e of edgesRaw) {
+                    const a = String(e.from)
+                    const b = String(e.to)
+                    const arr = children.get(a) || []
+                    arr.push(b)
+                    children.set(a, arr)
+                  }
+
+                  const depthById = new Map<string, number>()
+                  if (rootId) depthById.set(rootId, 0)
+                  const q: string[] = rootId ? [rootId] : []
+                  while (q.length) {
+                    const cur = q.shift()!
+                    const d = depthById.get(cur) ?? 0
+                    if (d >= 3) continue
+                    for (const nxt of children.get(cur) || []) {
+                      if (!depthById.has(nxt)) {
+                        depthById.set(nxt, d + 1)
+                        q.push(nxt)
+                      }
+                    }
+                  }
+
+                  const byDepth = new Map<number, string[]>()
+                  for (const n of nodesRaw) {
+                    const id = String(n.id)
+                    const d = depthById.get(id) ?? 999
+                    const arr = byDepth.get(d) || []
+                    arr.push(id)
+                    byDepth.set(d, arr)
+                  }
+                  for (const arr of byDepth.values()) arr.sort()
+
+                  const positions = new Map<string, { x: number; y: number }>()
+                  const XGAP = 340
+                  const YGAP = 140
+                  const depths = Array.from(byDepth.keys()).sort((a, b) => a - b)
+                  for (const d of depths) {
+                    const ids = byDepth.get(d) || []
+                    for (let i = 0; i < ids.length; i++) {
+                      positions.set(ids[i], { x: (d === 999 ? 4 : d) * XGAP, y: i * YGAP })
+                    }
+                  }
+
                   const rfNodes: Node[] = nodesRaw.map((n: any) => {
-                    const label = `${displayName(n.id)}`
+                    const id = String(n.id)
+                    const label = `${displayName(id)}`
                     const sj = typeof n.summary_ja === 'string' ? n.summary_ja.trim() : ''
                     const short = sj ? sj.split(/\r?\n/).slice(0, 4).join('\n') : '(no summary)'
                     return {
-                      id: String(n.id),
-                      position: { x: 0, y: 0 },
+                      id,
+                      position: positions.get(id) || { x: 0, y: 0 },
                       data: {
                         label: `${label}\n${short}`,
                       },
+                      draggable: false,
                       style: {
                         width: 280,
                         padding: 10,
                         borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.12)',
+                        border: id === rootId ? '1px solid rgba(77,163,255,0.55)' : '1px solid rgba(255,255,255,0.12)',
                         background: 'rgba(255,255,255,0.06)',
                         fontSize: 12,
                         whiteSpace: 'pre-wrap',
