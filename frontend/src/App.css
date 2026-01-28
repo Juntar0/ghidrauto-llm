@@ -464,6 +464,142 @@
   filter: brightness(1.15);
 }
 
+.addrLink {
+  color: #b28dff;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.addrLink:hover {
+  filter: brightness(1.2);
+}
+
+/* MemoryView modal */
+.memModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.memModalInner {
+  width: min(1200px, 96vw);
+  height: min(820px, 92vh);
+  background: #0f141a;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.memHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.memTitle { font-weight: 700; }
+
+.memTools { display: flex; gap: 10px; align-items: center; }
+
+.memBar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.memBar input {
+  width: 180px;
+  background: #0b0f14;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #d7e2ee;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.memBar select {
+  background: #0b0f14;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #d7e2ee;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.memMeta { color: rgba(255,255,255,0.7); font-size: 12px; }
+
+.memError { padding: 8px 12px; color: #ff7b7b; font-size: 13px; }
+
+.memActions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.memBody {
+  flex: 1;
+  overflow: auto;
+}
+
+.memTable {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  padding: 10px 12px;
+}
+
+.memRow {
+  display: grid;
+  grid-template-columns: 170px 1fr 200px;
+  gap: 14px;
+  padding: 2px 0;
+}
+
+.memAddr { color: rgba(255,255,255,0.6); }
+
+.memHex { display: flex; flex-wrap: wrap; gap: 6px; }
+.memAscii { display: flex; flex-wrap: wrap; gap: 1px; }
+
+.memByte, .memChar {
+  user-select: none;
+}
+
+.memByte {
+  padding: 1px 2px;
+  border-radius: 3px;
+}
+
+.memChar {
+  padding: 1px 1px;
+  border-radius: 3px;
+}
+
+.memByteSel {
+  background: rgba(77, 163, 255, 0.25);
+  outline: 1px solid rgba(77, 163, 255, 0.35);
+}
+
+.memFooter {
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding: 8px 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+}
+
+.memFooterLabel { color: rgba(255,255,255,0.6); margin-bottom: 4px; }
+.memFooterVal { white-space: pre-wrap; word-break: break-all; }
+
 .callEdgePrefix {
   display: inline-block;
   min-width: 3.5ch;

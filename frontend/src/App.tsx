@@ -17,6 +17,7 @@ import hljs from 'highlight.js/lib/core'
 import cpp from 'highlight.js/lib/languages/cpp'
 import x86asm from 'highlight.js/lib/languages/x86asm'
 import 'highlight.js/styles/github-dark.css'
+import MemoryView from './MemoryView'
 
 hljs.registerLanguage('cpp', cpp)
 hljs.registerLanguage('x86asm', x86asm)
@@ -33,7 +34,7 @@ function linkifyHighlightedHtml(
   const root = document.createElement('div')
   root.innerHTML = html
 
-  const tokenRe = /\b(?:FUN_|thunk_FUN_)([0-9A-Fa-f]+)\b|\b(?:sub|function)_([0-9A-Fa-f]+)\b|\b[A-Za-z_][A-Za-z0-9_]*\b/g
+  const tokenRe = /\b(?:FUN_|thunk_FUN_)([0-9A-Fa-f]+)\b|\b(?:sub|function)_([0-9A-Fa-f]+)\b|\b0x[0-9A-Fa-f]+\b|\b[A-Za-z_][A-Za-z0-9_]*\b/g
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   const nodes: Text[] = []
@@ -54,8 +55,9 @@ function linkifyHighlightedHtml(
       const whole = m[0]
       if (!whole) continue
 
-      // Determine fid
+      // Determine target: function fid or memory addr
       let fid: string | undefined
+      let memAddr: string | undefined
 
       const addr1 = m[1]
       const addr2 = m[2]
@@ -65,20 +67,29 @@ function linkifyHighlightedHtml(
       } else if (addr2) {
         const a = addr2.toLowerCase()
         fid = entryAddrToId.get(a) || entryAddrToId.get(`0x${a}`)
+      } else if (whole.toLowerCase().startsWith('0x')) {
+        memAddr = whole
       } else {
         fid = nameToId.get(whole.toLowerCase())
       }
 
-      if (!fid) continue
+      if (!fid && !memAddr) continue
 
       // text before match
       if (i > last) frag.appendChild(document.createTextNode(s.slice(last, i)))
 
       const span = document.createElement('span')
-      span.className = 'codeLink'
-      span.setAttribute('data-fid', fid)
-      span.title = fid
-      span.textContent = displayNameById.get(fid) || whole
+      if (fid) {
+        span.className = 'codeLink'
+        span.setAttribute('data-fid', fid)
+        span.title = fid
+        span.textContent = displayNameById.get(fid) || whole
+      } else {
+        span.className = 'addrLink'
+        span.setAttribute('data-addr', memAddr || whole)
+        span.title = memAddr || whole
+        span.textContent = whole
+      }
       frag.appendChild(span)
 
       last = i + whole.length
@@ -715,6 +726,9 @@ export default function App() {
 
   const [navHistory, setNavHistory] = useState<string[]>([])
   const [navPos, setNavPos] = useState<number>(-1)
+
+  const [showMemory, setShowMemory] = useState(false)
+  const [memoryAddr, setMemoryAddr] = useState<string | null>(null)
 
   const [_callEdges, _setCallEdges] = useState<Record<string, string[]>>({})
 
@@ -1912,12 +1926,23 @@ export default function App() {
                 }}
                 onClick={(e) => {
                   const target = e.target as HTMLElement
-                  const el = (target.closest('.codeLink') as HTMLElement | null) || null
-                  if (el) {
-                    const fid = el.getAttribute('data-fid')
+
+                  const codeEl = (target.closest('.codeLink') as HTMLElement | null) || null
+                  if (codeEl) {
+                    const fid = codeEl.getAttribute('data-fid')
                     if (fid) {
                       navigateTo(fid, { from: selected ?? undefined, recordEdge: true })
                       if (isMobile) setMobileTab('disasm')
+                      return
+                    }
+                  }
+
+                  const addrEl = (target.closest('.addrLink') as HTMLElement | null) || null
+                  if (addrEl) {
+                    const a = addrEl.getAttribute('data-addr')
+                    if (a) {
+                      setMemoryAddr(a)
+                      setShowMemory(true)
                     }
                   }
                 }}
@@ -1931,6 +1956,14 @@ export default function App() {
 
   return (
     <div className='appRoot' onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
+      {showMemory && jobId ? (
+        <MemoryView
+          apiBase={apiBase}
+          jobId={jobId}
+          initialAddr={memoryAddr || undefined}
+          onClose={() => setShowMemory(false)}
+        />
+      ) : null}
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarCollapsed ? 'sidebarCollapsed' : ''}`} style={sidebarStyle}>
         <div className='sidebarHeader'>
@@ -2568,12 +2601,23 @@ export default function App() {
                           dangerouslySetInnerHTML={{ __html: ghidraHtmlRows[idx] || '' }}
                           onClick={(e) => {
                             const target = e.target as HTMLElement
+
                             const el = (target.closest('.codeLink') as HTMLElement | null) || null
                             if (el) {
                               const fid = el.getAttribute('data-fid')
                               if (fid) {
                                 navigateTo(fid, { from: selected ?? undefined, recordEdge: true })
                                 if (isMobile) setMobileTab('disasm')
+                                return
+                              }
+                            }
+
+                            const addrEl = (target.closest('.addrLink') as HTMLElement | null) || null
+                            if (addrEl) {
+                              const a = addrEl.getAttribute('data-addr')
+                              if (a) {
+                                setMemoryAddr(a)
+                                setShowMemory(true)
                               }
                             }
                           }}

@@ -9,6 +9,39 @@ from pathlib import Path
 from .storage import ensure_job_dirs
 
 
+def _run_analyze_headless(
+    *,
+    analyze_headless: str,
+    project_root: Path,
+    project_name: str,
+    scripts_dir: str,
+    args: list[str],
+    timeout_seconds: int,
+    log_path: Path,
+) -> None:
+    env = os.environ.copy()
+    env.pop("JAVA_HOME", None)
+
+    cmd = [
+        analyze_headless,
+        str(project_root),
+        project_name,
+        *args,
+        "-scriptPath",
+        scripts_dir,
+    ]
+
+    with open(log_path, "w", encoding="utf-8", errors="replace") as log:
+        subprocess.run(cmd, check=True, env=env, timeout=timeout_seconds, stdout=log, stderr=subprocess.STDOUT)
+
+    try:
+        txt = log_path.read_text(encoding="utf-8", errors="replace")
+        if "REPORT SCRIPT ERROR" in txt or "GhidraScriptLoadException" in txt:
+            raise RuntimeError("Ghidra postScript failed; see ghidra.log")
+    except Exception:
+        pass
+
+
 def run_ghidra_extract(
     *,
     work_dir: str,
@@ -34,42 +67,29 @@ def run_ghidra_extract(
 
     project_name = "proj"
 
-    cmd = [
-        analyze_headless,
-        str(project_root),
-        project_name,
-        "-import",
-        str(dest),
-        "-overwrite",
-        "-scriptPath",
-        scripts_dir,
-        "-postScript",
-        "ExtractAnalysis.java",
-        str(paths["extract"] / "analysis.json"),
-        str(paths["disasm"]),
-        str(paths["decomp"]),
-        str(paths["pcode"]),
-        str(paths["extract"] / "status.json"),
-    ]
-
-    env = os.environ.copy()
-    # Remove JAVA_HOME completely so Ghidra auto-detects Java (instead of prompting)
-    env.pop("JAVA_HOME", None)
-
     # Capture ghidra output for debugging/progress.
     log_path = paths["extract"] / "ghidra.log"
-    with open(log_path, "w", encoding="utf-8", errors="replace") as log:
-        subprocess.run(cmd, check=True, env=env, timeout=timeout_seconds, stdout=log, stderr=subprocess.STDOUT)
 
-    # Ghidra sometimes exits 0 even if the postScript failed (it logs an ERROR).
-    # Treat that as a failure so the UI can surface it.
-    try:
-        txt = log_path.read_text(encoding="utf-8", errors="replace")
-        if "REPORT SCRIPT ERROR" in txt or "GhidraScriptLoadException" in txt:
-            raise RuntimeError("Ghidra postScript failed; see ghidra.log")
-    except Exception:
-        # If we can't read the log, don't mask the extract success.
-        pass
+    _run_analyze_headless(
+        analyze_headless=analyze_headless,
+        project_root=project_root,
+        project_name=project_name,
+        scripts_dir=scripts_dir,
+        timeout_seconds=timeout_seconds,
+        log_path=log_path,
+        args=[
+            "-import",
+            str(dest),
+            "-overwrite",
+            "-postScript",
+            "ExtractAnalysis.java",
+            str(paths["extract"] / "analysis.json"),
+            str(paths["disasm"]),
+            str(paths["decomp"]),
+            str(paths["pcode"]),
+            str(paths["extract"] / "status.json"),
+        ],
+    )
 
     # Ensure analysis.json exists (postScript responsibility).
     ap = paths["extract"] / "analysis.json"

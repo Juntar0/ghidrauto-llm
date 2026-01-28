@@ -20,6 +20,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from .config import load_settings
 from .extractor import run_capa_analysis, run_ghidra_extract
+from .memory_peek import memory_view
 
 import shutil
 import subprocess
@@ -252,6 +253,22 @@ async def get_analysis(job_id: str):
     if not ap.exists():
         return JSONResponse({"status": "analyzing"}, status_code=202)
     return JSONResponse(read_json(ap, {}))
+
+
+@app.get("/api/jobs/{job_id}/memory/view")
+async def get_memory_view(job_id: str, addr: str = Query(...), len: int = Query(0x200, ge=1, le=0x4000)):
+    try:
+        return JSONResponse(memory_view(job_id, addr, len))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "peek memory timeout")
+    except subprocess.CalledProcessError:
+        raise HTTPException(500, "peek memory failed; see extract/peekmem.log")
+    except Exception as e:
+        raise HTTPException(500, f"peek memory error: {e}")
 
 
 @app.get("/api/jobs/{job_id}/capa")
