@@ -30,33 +30,42 @@ function escapeHtml(s: string) {
     .replace(/'/g, '&#39;')
 }
 
-const LINK_TOKEN_PREFIX = '__CLAWD_LINK__'
+const LINK_TOKEN_BEGIN = '__CLAWD_LINK_BEGIN__'
+const LINK_TOKEN_END = '__CLAWD_LINK_END__'
 
 function injectLinkTokens(line: string, entryAddrToId: Map<string, string>) {
   // Replace common function reference patterns with stable tokens that survive highlight.js.
   // We'll swap these tokens back to clickable <span> after highlighting.
   let out = line
 
+  const mk = (fid: string) => `${LINK_TOKEN_BEGIN}${encodeURIComponent(fid)}${LINK_TOKEN_END}`
+
   // FUN_00401000 / thunk_FUN_00401000
   out = out.replace(/\b(?:FUN_|thunk_FUN_)([0-9A-Fa-f]+)\b/g, (m, addr) => {
     const a = String(addr).toLowerCase()
     const fid = entryAddrToId.get(a) || entryAddrToId.get(`0x${a}`)
-    return fid ? `${LINK_TOKEN_PREFIX}${fid}__` : m
+    return fid ? mk(fid) : m
   })
 
   // sub_00401000 / function_00401000
   out = out.replace(/\b(?:sub|function)_([0-9A-Fa-f]+)\b/g, (m, addr) => {
     const a = String(addr).toLowerCase()
     const fid = entryAddrToId.get(a) || entryAddrToId.get(`0x${a}`)
-    return fid ? `${LINK_TOKEN_PREFIX}${fid}__` : m
+    return fid ? mk(fid) : m
   })
 
   return out
 }
 
 function replaceLinkTokens(html: string, displayNameById: Map<string, string>) {
-  return html.replace(new RegExp(`${LINK_TOKEN_PREFIX}([^_][^_]*)__`, 'g'), (_m, fid) => {
-    const f = String(fid)
+  const re = new RegExp(`${LINK_TOKEN_BEGIN}([\s\S]*?)${LINK_TOKEN_END}`, 'g')
+  return html.replace(re, (_m, fidEnc) => {
+    let f = String(fidEnc)
+    try {
+      f = decodeURIComponent(f)
+    } catch {
+      // ignore
+    }
     const label = displayNameById.get(f) || f
     return `<span class="codeLink" data-fid="${escapeHtml(f)}" title="${escapeHtml(f)}">${escapeHtml(label)}</span>`
   })
