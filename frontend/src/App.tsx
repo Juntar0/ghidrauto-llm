@@ -1719,8 +1719,11 @@ export default function App() {
   }
 
   function renderPseudocode(text?: string) {
-    const src = text ?? ''
+    let src = text ?? ''
     if (!src) return null
+
+    // Remove leading comment block (/* ... */)
+    src = src.replace(/^\/\*[\s\S]*?\*\/\s*/m, '')
 
     const lines = src.split(/\r?\n/)
 
