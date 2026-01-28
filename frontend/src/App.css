@@ -213,6 +213,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .topbarLeft {
@@ -220,6 +221,7 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex: 1 1 420px;
 }
 
 .topbarTitle {
@@ -235,6 +237,20 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1 1 520px;
+  justify-content: flex-end;
+  min-width: 0;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.topbarRight::-webkit-scrollbar {
+  height: 6px;
+}
+
+.topbarRight::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+  border-radius: 999px;
 }
 
 .panes {
