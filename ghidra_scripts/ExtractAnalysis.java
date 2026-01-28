@@ -298,11 +298,15 @@ public class ExtractAnalysis extends GhidraScript {
 		ifc.setSimplificationStyle("decompile");
 		ifc.openProgram(currentProgram);
 
-		List<Function> funcs = new ArrayList<>();
+		// Deduplicate by entry point address (some functions appear multiple times with same name).
+		Map<String, Function> funcMap = new LinkedHashMap<>();
 		FunctionIterator fit = fm.getFunctions(true);
 		while (fit.hasNext()) {
-			funcs.add(fit.next());
+			Function f = fit.next();
+			String key = f.getEntryPoint().toString();
+			funcMap.putIfAbsent(key, f);
 		}
+		List<Function> funcs = new ArrayList<>(funcMap.values());
 		funcs.sort(Comparator.comparingLong(f -> f.getEntryPoint().getOffset()));
 
 		// Extract import table
