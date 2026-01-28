@@ -21,61 +21,77 @@ import 'highlight.js/styles/github-dark.css'
 hljs.registerLanguage('cpp', cpp)
 hljs.registerLanguage('x86asm', x86asm)
 
-function escapeHtml(s: string) {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
+// (escapeHtml removed)
+function linkifyHighlightedHtml(
+  html: string,
+  entryAddrToId: Map<string, string>,
+  nameToId: Map<string, string>,
+  displayNameById: Map<string, string>,
+) {
+  if (typeof document === 'undefined') return html
 
-const LINK_TOKEN_BEGIN = '__CLAWD_LINK_BEGIN__'
-const LINK_TOKEN_END = '__CLAWD_LINK_END__'
+  const root = document.createElement('div')
+  root.innerHTML = html
 
-function injectLinkTokens(line: string, entryAddrToId: Map<string, string>, nameToId: Map<string, string>) {
-  // Replace common function reference patterns with stable tokens that survive highlight.js.
-  // We'll swap these tokens back to clickable <span> after highlighting.
-  let out = line
+  const tokenRe = /\b(?:FUN_|thunk_FUN_)([0-9A-Fa-f]+)\b|\b(?:sub|function)_([0-9A-Fa-f]+)\b|\b[A-Za-z_][A-Za-z0-9_]*\b/g
 
-  const mk = (fid: string) => `${LINK_TOKEN_BEGIN}${encodeURIComponent(fid)}${LINK_TOKEN_END}`
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const nodes: Text[] = []
+  let n: globalThis.Node | null
+  // collect first (so we can safely replace)
+  while ((n = walker.nextNode())) nodes.push(n as unknown as Text)
 
-  // FUN_00401000 / thunk_FUN_00401000
-  out = out.replace(/\b(?:FUN_|thunk_FUN_)([0-9A-Fa-f]+)\b/g, (m, addr) => {
-    const a = String(addr).toLowerCase()
-    const fid = entryAddrToId.get(a) || entryAddrToId.get(`0x${a}`)
-    return fid ? mk(fid) : m
-  })
+  for (const t of nodes) {
+    const s = t.nodeValue || ''
+    if (!s.trim()) continue
 
-  // sub_00401000 / function_00401000
-  out = out.replace(/\b(?:sub|function)_([0-9A-Fa-f]+)\b/g, (m, addr) => {
-    const a = String(addr).toLowerCase()
-    const fid = entryAddrToId.get(a) || entryAddrToId.get(`0x${a}`)
-    return fid ? mk(fid) : m
-  })
+    let last = 0
+    let changed = false
+    const frag = document.createDocumentFragment()
 
-  // Named function references (fast tokenization; avoids building a giant RegExp)
-  // e.g., winmainCRTStartup, init_global_seed
-  out = out.replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, (m) => {
-    const fid = nameToId.get(String(m).toLowerCase())
-    return fid ? mk(fid) : m
-  })
+    for (const m of s.matchAll(tokenRe)) {
+      const i = m.index ?? 0
+      const whole = m[0]
+      if (!whole) continue
 
-  return out
-}
+      // Determine fid
+      let fid: string | undefined
 
-function replaceLinkTokens(html: string, displayNameById: Map<string, string>) {
-  const re = new RegExp(`${LINK_TOKEN_BEGIN}([\s\S]*?)${LINK_TOKEN_END}`, 'g')
-  return html.replace(re, (_m, fidEnc) => {
-    let f = String(fidEnc)
-    try {
-      f = decodeURIComponent(f)
-    } catch {
-      // ignore
+      const addr1 = m[1]
+      const addr2 = m[2]
+      if (addr1) {
+        const a = addr1.toLowerCase()
+        fid = entryAddrToId.get(a) || entryAddrToId.get(`0x${a}`)
+      } else if (addr2) {
+        const a = addr2.toLowerCase()
+        fid = entryAddrToId.get(a) || entryAddrToId.get(`0x${a}`)
+      } else {
+        fid = nameToId.get(whole.toLowerCase())
+      }
+
+      if (!fid) continue
+
+      // text before match
+      if (i > last) frag.appendChild(document.createTextNode(s.slice(last, i)))
+
+      const span = document.createElement('span')
+      span.className = 'codeLink'
+      span.setAttribute('data-fid', fid)
+      span.title = fid
+      span.textContent = displayNameById.get(fid) || whole
+      frag.appendChild(span)
+
+      last = i + whole.length
+      changed = true
     }
-    const label = displayNameById.get(f) || f
-    return `<span class="codeLink" data-fid="${escapeHtml(f)}" title="${escapeHtml(f)}">${escapeHtml(label)}</span>`
-  })
+
+    if (!changed) continue
+
+    if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)))
+    t.parentNode?.replaceChild(frag, t)
+  }
+
+  return root.innerHTML
 }
 
 type Analysis = {
@@ -1646,16 +1662,14 @@ export default function App() {
     const cached = ghidraHtmlCacheRef.current.get(key)
     if (cached) return cached
 
-    // 1) Inject link tokens into raw text (per line)
-    const raw = ghidraRows.map((r) => injectLinkTokens(r.text, entryAddrToId, nameToId)).join('\n')
-
-    // 2) Highlight once for the whole block
+    // Highlight once for the whole block
+    const raw = ghidraRows.map((r) => r.text).join('\n')
     const highlighted = hljs.highlight(raw, { language: 'cpp' }).value
 
-    // 3) Replace tokens with clickable spans using displayNameById
-    const linked = replaceLinkTokens(highlighted, displayNameById)
+    // Linkify by parsing highlighted HTML (handles hljs span splits)
+    const linked = linkifyHighlightedHtml(highlighted, entryAddrToId, nameToId, displayNameById)
 
-    // 4) Split back to rows (hljs preserves newlines)
+    // Split back to rows (hljs preserves newlines)
     const rows = linked.split('\n')
 
     ghidraHtmlCacheRef.current.set(key, rows)
@@ -1889,8 +1903,10 @@ export default function App() {
               <div
                 className='pseudoCodeContent'
                 dangerouslySetInnerHTML={{
-                  __html: replaceLinkTokens(
-                    hljs.highlight(injectLinkTokens(line, entryAddrToId, nameToId), { language: 'cpp' }).value,
+                  __html: linkifyHighlightedHtml(
+                    hljs.highlight(line, { language: 'cpp' }).value,
+                    entryAddrToId,
+                    nameToId,
                     displayNameById
                   )
                 }}
