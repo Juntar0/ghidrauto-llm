@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
-import ReactFlow, { Background, Controls, MiniMap, type Edge, type Node, type NodeProps } from 'reactflow'
+import ReactFlow, { Background, Controls, MiniMap, Handle, Position, type Edge, type Node, type NodeProps } from 'reactflow'
 import 'reactflow/dist/style.css'
 
 type Analysis = {
@@ -291,6 +291,10 @@ function CFGNode({ data }: NodeProps<{ title: string; summary: string; hasSummar
         gap: 8,
       }}
     >
+      {/* connection handles */}
+      <Handle type='target' position={Position.Top} style={{ background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(0,0,0,0.35)' }} />
+      <Handle type='source' position={Position.Bottom} style={{ background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(0,0,0,0.35)' }} />
+
       <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{data.title}</div>
       <div
         style={{
@@ -3206,14 +3210,16 @@ export default function App() {
                   for (const arr of byDepth.values()) arr.sort()
 
                   const positions = new Map<string, { x: number; y: number }>()
-                  // top-down layout: depth increases downward (y)
+                  // top-down layout: depth increases downward (y), centered pyramid per depth
                   const XGAP = 360
                   const YGAP = 170
                   const depths = Array.from(byDepth.keys()).sort((a, b) => a - b)
-                  for (const d of depths) {
-                    const ids = byDepth.get(d) || []
+                  for (const d0 of depths) {
+                    const ids = byDepth.get(d0) || []
+                    const d = d0 === 999 ? 4 : d0
+                    const center = (ids.length - 1) / 2
                     for (let i = 0; i < ids.length; i++) {
-                      positions.set(ids[i], { x: i * XGAP, y: (d === 999 ? 4 : d) * YGAP })
+                      positions.set(ids[i], { x: (i - center) * XGAP, y: d * YGAP })
                     }
                   }
 
