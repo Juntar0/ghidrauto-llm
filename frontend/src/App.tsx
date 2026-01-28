@@ -750,7 +750,25 @@ export default function App() {
       updated: (a, b) => String(index[b.id]?.updated_at ?? '').localeCompare(String(index[a.id]?.updated_at ?? '')),
     }
 
-    return [...arr].sort(sorters[sortKey])
+    const sorted = [...arr].sort(sorters[sortKey])
+
+    // de-dupe: imported/external stubs often appear multiple times with the same name
+    const seen = new Set<string>()
+    const deduped: typeof sorted = []
+    for (const f of sorted) {
+      const isWinApi = Boolean((f as any).is_winapi)
+      const isExternal = Boolean((f as any).is_external)
+      if (isWinApi || isExternal) {
+        const nm = String((f as any).name || (f as any).id).toLowerCase()
+        const dll = String((f as any).dll || '')
+        const key = `${isWinApi ? 'w' : 'x'}:${dll.toLowerCase()}:${nm}`
+        if (seen.has(key)) continue
+        seen.add(key)
+      }
+      deduped.push(f)
+    }
+
+    return deduped
   }, [functions, entryOnly, winApiOnly, entryFunctionId, fnQuery, index, sortKey])
 
   const mainCandidates = useMemo(() => {
