@@ -2628,7 +2628,7 @@ export default function App() {
             style={{
               background: '#1a1a1a',
               borderRadius: 12,
-              maxWidth: 1200,
+              maxWidth: '95vw',
               width: '100%',
               maxHeight: '90vh',
               display: 'flex',
@@ -2697,7 +2697,7 @@ export default function App() {
             style={{
               background: '#1a1a1a',
               borderRadius: 12,
-              maxWidth: 1200,
+              maxWidth: '95vw',
               width: '100%',
               maxHeight: '90vh',
               display: 'flex',
@@ -2856,7 +2856,7 @@ export default function App() {
             style={{
               background: '#1a1a1a',
               borderRadius: 12,
-              maxWidth: 1100,
+              maxWidth: '90vw',
               width: '100%',
               maxHeight: '90vh',
               display: 'flex',
@@ -2960,7 +2960,7 @@ export default function App() {
             style={{
               background: '#1a1a1a',
               borderRadius: 12,
-              maxWidth: 900,
+              maxWidth: '85vw',
               width: '100%',
               maxHeight: '90vh',
               display: 'flex',
@@ -3215,7 +3215,7 @@ export default function App() {
             style={{
               background: '#1a1a1a',
               borderRadius: 12,
-              maxWidth: 1200,
+              maxWidth: '95vw',
               width: '100%',
               height: '90vh',
               display: 'flex',
@@ -3340,7 +3340,7 @@ export default function App() {
             style={{
               background: '#1a1a1a',
               borderRadius: 12,
-              maxWidth: 1100,
+              maxWidth: '90vw',
               width: '100%',
               maxHeight: '90vh',
               display: 'flex',
@@ -3479,7 +3479,7 @@ export default function App() {
             style={{
               background: '#1a1a1a',
               borderRadius: 12,
-              maxWidth: 1100,
+              maxWidth: '90vw',
               width: '100%',
               maxHeight: '90vh',
               display: 'flex',
@@ -3612,7 +3612,7 @@ export default function App() {
             style={{
               background: '#1a1a1a',
               borderRadius: 12,
-              maxWidth: 1100,
+              maxWidth: '90vw',
               width: '100%',
               maxHeight: '90vh',
               display: 'flex',
