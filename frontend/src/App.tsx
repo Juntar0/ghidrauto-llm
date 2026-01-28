@@ -565,7 +565,7 @@ export default function App() {
   const [ai, setAi] = useState<AiResult | null>(null)
   const [funcSummary, setFuncSummary] = useState<any>(null)
   const [showExeSummary, setShowExeSummary] = useState<boolean>(false)
-  const [_exeSummary, setExeSummary] = useState<any>(null)
+  const [exeSummary, setExeSummary] = useState<any>(null)
   const [capaData, setCapaData] = useState<any>(null)
   const [mainGuess, setMainGuess] = useState<{ function_id: string; reason?: string } | null>(null)
   const [mainGuessError, setMainGuessError] = useState<string | null>(null)
@@ -1222,9 +1222,12 @@ export default function App() {
     if (!selected) return
     const st = index[selected]
     if (!st) return
+
+    // Always refresh function summary when index changes (covers summarize task updates too).
+    loadFuncSummary(jobId, selected)
+
     if (st.status === 'ok' || st.status === 'error') {
       loadAi(jobId, selected)
-      loadFuncSummary(jobId, selected)
     } else {
       setAi((prev) => (prev ? { ...prev, status: st.status ?? prev.status } : prev))
     }
@@ -2356,35 +2359,47 @@ export default function App() {
                 </details>
               ) : null}
 
+              {/* Function summary (always visible if available; independent from AI decompile status) */}
+              {selected && ((funcSummary as any)?.summary_ja || (ai as any)?.summary_ja) ? (
+                <div
+                  style={{
+                    padding: '12px 16px',
+                    background: 'rgba(255, 215, 0, 0.08)',
+                    border: '1px solid rgba(255, 215, 0, 0.2)',
+                    borderRadius: '10px',
+                    marginBottom: '12px',
+                    lineHeight: '1.6',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      color: 'rgba(255, 215, 0, 0.9)',
+                      marginBottom: '6px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      gap: 10,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span>📝 概要</span>
+                    <span className='secondary' style={{ fontSize: 11 }}>
+                      {(ai as any)?.summary_ja ? 'source: decompile' : 'source: summarize'}
+                    </span>
+                  </div>
+                  <div style={{ color: 'rgba(255,255,255,0.85)', whiteSpace: 'pre-wrap' }}>
+                    {(ai as any)?.summary_ja || (funcSummary as any)?.summary_ja}
+                  </div>
+                </div>
+              ) : null}
+
               {ai?.status === 'ok' ? (
                 <>
                   <div className='pseudoTitle'>
                     <div className='pseudoName'>{ai.proposed_name ?? displayName(selected)}</div>
                     <div className='pseudoSig'>{ai.signature ?? ''}</div>
                   </div>
-
-                  {(((ai as any).summary_ja as any) || (funcSummary as any)?.summary_ja) ? (
-                    <div style={{ 
-                      padding: '12px 16px',
-                      background: 'rgba(255, 215, 0, 0.08)',
-                      border: '1px solid rgba(255, 215, 0, 0.2)',
-                      borderRadius: '10px',
-                      marginBottom: '12px',
-                      lineHeight: '1.6'
-                    }}>
-                      <div style={{ 
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        color: 'rgba(255, 215, 0, 0.9)',
-                        marginBottom: '6px'
-                      }}>
-                        📝 概要
-                      </div>
-                      <div style={{ color: 'rgba(255,255,255,0.85)' }}>
-                        {(ai as any).summary_ja || (funcSummary as any)?.summary_ja}
-                      </div>
-                    </div>
-                  ) : null}
 
                   <div style={{ height: 10 }} />
                   <div className='codeBlock'>{renderPseudocode(ai.pseudocode)}</div>
@@ -2985,6 +3000,116 @@ export default function App() {
                   <input className='input' value={anthropicDefaultModel} onChange={(e) => setAnthropicDefaultModel(e.target.value)} style={{ padding: '6px 8px', width: 260 }} />
                 </label>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showExeSummary ? (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            zIndex: 1090,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={() => setShowExeSummary(false)}
+        >
+          <div
+            style={{
+              background: '#1a1a1a',
+              borderRadius: 12,
+              maxWidth: 1100,
+              width: '100%',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18 }}>EXE Summary</h3>
+                <div className='secondary' style={{ fontSize: 12, marginTop: 4 }}>
+                  Built from stored per-function summaries
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <button
+                  className='smallBtn'
+                  onClick={async () => {
+                    if (!jobId) return
+                    const fd = new FormData()
+                    if (providerChoice) fd.set('provider', providerChoice)
+                    const effectiveModel =
+                      modelChoice || (providerChoice === 'openai' ? openaiDefaultModel : anthropicDefaultModel) || ''
+                    if (effectiveModel) fd.set('model', effectiveModel)
+                    if (providerChoice === 'openai') {
+                      if (openaiBaseUrl.trim()) fd.set('openai_base_url', openaiBaseUrl.trim())
+                      if (openaiApiKey.trim()) fd.set('openai_api_key', openaiApiKey.trim())
+                      if (openaiApiMode.trim()) fd.set('openai_api_mode', openaiApiMode.trim())
+                      if (openaiReasoning.trim()) fd.set('openai_reasoning', openaiReasoning.trim())
+                    }
+                    await fetch(`${apiBase}/api/jobs/${jobId}/summarize_exe`, { method: 'POST', body: fd })
+                    window.setTimeout(() => loadExeSummary(jobId), 800)
+                  }}
+                  disabled={!jobId}
+                  title='Generate/update EXE summary'
+                >
+                  Update
+                </button>
+                <button
+                  className='smallBtn'
+                  onClick={() => {
+                    if (jobId) loadExeSummary(jobId)
+                  }}
+                  disabled={!jobId}
+                >
+                  Refresh
+                </button>
+                <button className='smallBtn' onClick={() => setShowExeSummary(false)} style={{ fontSize: 20, padding: '4px 12px' }}>
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: 20, overflow: 'auto' }}>
+              {!exeSummary || exeSummary?.status === 'not_started' ? (
+                <div className='secondary'>No EXE summary yet. Click Update.</div>
+              ) : exeSummary?.status === 'error' ? (
+                <div style={{ color: 'rgba(255,96,96,0.9)', whiteSpace: 'pre-wrap' }}>
+                  {String(exeSummary?.error || 'error')}
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <span className='badge'>model: {exeSummary?.model || '-'}</span>
+                    {typeof exeSummary?.confidence === 'number' ? <span className='badge'>conf: {exeSummary.confidence.toFixed(2)}</span> : null}
+                    {typeof exeSummary?.functions_n === 'number' ? <span className='badge'>functions: {exeSummary.functions_n}</span> : null}
+                    {exeSummary?.updated_at ? <span className='badge'>updated: {fmtJst(exeSummary.updated_at)}</span> : null}
+                  </div>
+                  <div className='codeBlock' style={{ whiteSpace: 'pre-wrap' }}>
+                    {String(exeSummary?.summary_ja || '')}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
