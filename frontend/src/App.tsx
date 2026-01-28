@@ -684,6 +684,9 @@ export default function App() {
   const [hoverDisasmLn, setHoverDisasmLn] = useState<number | null>(null)
   const [hoverPseudoLn, setHoverPseudoLn] = useState<number | null>(null)
   const [hoveredAddress, setHoveredAddress] = useState<string | null>(null)
+
+  // Cache expensive syntax highlighting per-function to speed up navigation.
+  const ghidraHtmlCacheRef = useRef<Map<string, string[]>>(new Map())
   const disasmRowRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
   const [providerChoice, setProviderChoice] = useLocalStorageState<string>('autore.providerChoice', 'anthropic')
@@ -1614,6 +1617,27 @@ export default function App() {
   const selectedStatus = selected ? (index[selected]?.status ?? ai?.status) : undefined
   const selectedProposed = selected ? index[selected]?.proposed_name : undefined
 
+  const ghidraHtmlRows = useMemo(() => {
+    if (!jobId || !selected || !ghidraRows.length || !ghidraDecomp) return [] as string[]
+
+    // Key includes length to invalidate on re-extract changes.
+    const key = `${jobId}:${selected}:ghidra:${ghidraDecomp.length}`
+    const cached = ghidraHtmlCacheRef.current.get(key)
+    if (cached) return cached
+
+    const rows = ghidraRows.map((r) =>
+      addFunctionLinks(
+        hljs.highlight(r.text, { language: 'cpp' }).value,
+        entryAddrToId,
+        nameToId,
+        () => {},
+        displayNameById,
+      ),
+    )
+    ghidraHtmlCacheRef.current.set(key, rows)
+    return rows
+  }, [jobId, selected, ghidraRows, ghidraDecomp, entryAddrToId, nameToId, displayNameById])
+
   async function loadCalledRanking() {
     if (!jobId) return
     try {
@@ -2457,12 +2481,7 @@ export default function App() {
                       >
                         <div className='disasmLn'>{r.ln}</div>
                         <div className='disasmAddr'>{r.addr}</div>
-                        <div
-                          className='disasmInst'
-                          dangerouslySetInnerHTML={{
-                            __html: hljs.highlight(r.inst, { language: 'x86asm' }).value
-                          }}
-                        />
+                        <div className='disasmInst'>{r.inst}</div>
                       </div>
                     )
                   })
@@ -2488,12 +2507,12 @@ export default function App() {
             <div className='paneBody'>
               {ghidraDecomp ? (
                 <div className='ghidraDecomp'>
-                  {ghidraRows.map((r) => {
+                  {ghidraRows.map((r, idx) => {
                     // Extract address from line (e.g., "FUN_00401000" or "0x00401000")
                     const addrMatch = r.text.match(/\b(?:FUN_|thunk_FUN_)?([0-9A-Fa-f]{8,16})\b/)
                     const lineAddr = addrMatch ? addrMatch[1].toLowerCase() : null
                     const isHovered = hoveredAddress && lineAddr && lineAddr === hoveredAddress.toLowerCase().replace(/^0x/, '')
-                    
+
                     return (
                       <div
                         key={r.ln}
@@ -2508,15 +2527,7 @@ export default function App() {
                         <div className='ghidraLn'>{r.ln}</div>
                         <div
                           className='ghidraContent'
-                          dangerouslySetInnerHTML={{
-                            __html: addFunctionLinks(
-                              hljs.highlight(r.text, { language: 'cpp' }).value,
-                              entryAddrToId,
-                              nameToId,
-                              navigateTo,
-                              displayNameById
-                            )
-                          }}
+                          dangerouslySetInnerHTML={{ __html: ghidraHtmlRows[idx] || '' }}
                           onClick={(e) => {
                             const target = e.target as HTMLElement
                             if (target.classList.contains('codeLink')) {
