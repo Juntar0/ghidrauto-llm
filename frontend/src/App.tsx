@@ -613,6 +613,7 @@ export default function App() {
   const [cfgData, setCfgData] = useState<any>(null)
   const [cfgLoading, setCfgLoading] = useState<boolean>(false)
   const [cfgError, setCfgError] = useState<string | null>(null)
+  const [cfgDepth, setCfgDepth] = useState<number>(3)
   const [capaData, setCapaData] = useState<any>(null)
   const [mainGuess, setMainGuess] = useState<{ function_id: string; reason?: string } | null>(null)
   const [mainGuessError, setMainGuessError] = useState<string | null>(null)
@@ -1046,11 +1047,12 @@ export default function App() {
     }
   }
 
-  async function loadCFG(id: string, fid: string) {
+  async function loadCFG(id: string, fid: string, depth: number) {
     try {
       setCfgLoading(true)
       setCfgError(null)
-      const r = await fetch(`${apiBase}/api/jobs/${id}/callgraph?root=${encodeURIComponent(fid)}&depth=3`)
+      const d = Math.max(1, Math.min(3, Number(depth || 3)))
+      const r = await fetch(`${apiBase}/api/jobs/${id}/callgraph?root=${encodeURIComponent(fid)}&depth=${d}`)
       const j = await r.json().catch(() => null)
       setCfgData(j)
       return j
@@ -2044,7 +2046,7 @@ export default function App() {
               onClick={() => {
                 if (!jobId || !selected) return
                 setShowCFG(true)
-                loadCFG(jobId, selected)
+                loadCFG(jobId, selected, cfgDepth)
               }}
               disabled={!jobId || !selected}
               title='Show calls_out graph (depth=3)'
@@ -3140,16 +3142,33 @@ export default function App() {
               }}
             >
               <div>
-                <h3 style={{ margin: 0, fontSize: 18 }}>CFG (calls_out, depth=3)</h3>
+                <h3 style={{ margin: 0, fontSize: 18 }}>CFG (calls_out)</h3>
                 <div className='secondary' style={{ fontSize: 12, marginTop: 4 }}>
                   root: {selected ? displayName(selected) : '-'}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <label className='secondary' style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  depth
+                  <select
+                    className='input'
+                    value={cfgDepth}
+                    onChange={(e) => {
+                      const d = Number(e.target.value)
+                      setCfgDepth(d)
+                      if (jobId && selected) loadCFG(jobId, selected, d)
+                    }}
+                    style={{ padding: '6px 8px', width: 90 }}
+                  >
+                    <option value={1}>1</option>
+                    <option value={2}>2</option>
+                    <option value={3}>3</option>
+                  </select>
+                </label>
                 <button
                   className='smallBtn'
                   onClick={() => {
-                    if (jobId && selected) loadCFG(jobId, selected)
+                    if (jobId && selected) loadCFG(jobId, selected, cfgDepth)
                   }}
                   disabled={!jobId || !selected}
                 >
