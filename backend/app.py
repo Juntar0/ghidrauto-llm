@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import shutil
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,25 @@ from .chat_tools_v2 import TOOL_DESCRIPTIONS, dispatch_tool_v2
 # In-memory session state for multi-step exploration
 # Structure: {job_id: {step_count: int, active_function_id: str | None, last_updated: float}}
 chat_sessions: dict[str, dict] = {}
+
+
+def _spawn_extract(job_id: str, sample_path: Path, *, force: bool = False) -> None:
+    """Run extraction in a separate Python process.
+
+    FastAPI BackgroundTasks run inside the request worker process; if we run Ghidra/CAPA
+    there, it can stall unrelated UI fetches. Spawning a subprocess keeps browsing snappy.
+    """
+
+    # Run as module so relative imports work.
+    cmd = [sys.executable or "python3", "-m", "backend.extract_worker", job_id, str(sample_path)]
+    if force:
+        cmd.append("--force")
+
+    try:
+        # Detach; logs go to current stdout/stderr (uvicorn). Non-fatal if spawn fails.
+        subprocess.Popen(cmd, cwd=str(Path(__file__).resolve().parents[1]))
+    except Exception as e:
+        print(f"[extract] failed to spawn extract_worker: {e}")
 
 
 app = FastAPI(title="AutoRE Backend")
@@ -127,7 +147,7 @@ async def create_job_upload(
 
     _write_job_meta(job_id=job_id, source_type="upload", source_path=None, original_name=file.filename)
 
-    background.add_task(_run_extract, job_id, dest)
+    _spawn_extract(job_id, dest)
 
     return {"job_id": job_id}
 
@@ -149,7 +169,7 @@ async def create_job_by_path(background: BackgroundTasks, path: str = Form(...))
 
     _write_job_meta(job_id=job_id, source_type="path", source_path=str(p), original_name=p.name)
 
-    background.add_task(_run_extract, job_id, dest)
+    _spawn_extract(job_id, dest)
 
     return {"job_id": job_id}
 
@@ -318,7 +338,7 @@ async def reextract_job(job_id: str, background: BackgroundTasks):
 
     sample = sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)[0]
 
-    background.add_task(_run_extract, job_id, sample, force=True)
+    _spawn_extract(job_id, sample, force=True)
     return {"status": "queued"}
 
 
