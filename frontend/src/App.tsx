@@ -2092,6 +2092,10 @@ export default function App() {
               →
             </button>
 
+            <button className='smallBtn' onClick={() => setShowSettings(true)} title='Settings'>
+              Settings
+            </button>
+
             <button className={`smallBtn ${showDebug ? 'smallBtnActive' : ''}`} onClick={() => setShowDebug(!showDebug)} title='Debug'>
               Debug
             </button>
@@ -2197,10 +2201,6 @@ export default function App() {
                 title='OpenAI Base URL (vLLM endpoint). /v1付きOK'
               />
             ) : null}
-
-            <button className='smallBtn' onClick={() => setShowSettings(true)} title='Settings'>
-              Settings
-            </button>
 
             {jobId ? (
               <button className='smallBtn' onClick={() => findMain(jobId)}>
