@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
+import ReactFlow, { Background, Controls, MiniMap, type Edge, type Node } from 'reactflow'
+import 'reactflow/dist/style.css'
 
 type Analysis = {
   sample?: { entry_point?: string; image_base?: string; path?: string }
@@ -567,6 +569,11 @@ export default function App() {
   const [showExeSummary, setShowExeSummary] = useState<boolean>(false)
   const [exeSummary, setExeSummary] = useState<any>(null)
   const [exeSummaryLogs, setExeSummaryLogs] = useState<any[]>([])
+
+  const [showCFG, setShowCFG] = useState<boolean>(false)
+  const [cfgData, setCfgData] = useState<any>(null)
+  const [cfgLoading, setCfgLoading] = useState<boolean>(false)
+  const [cfgError, setCfgError] = useState<string | null>(null)
   const [capaData, setCapaData] = useState<any>(null)
   const [mainGuess, setMainGuess] = useState<{ function_id: string; reason?: string } | null>(null)
   const [mainGuessError, setMainGuessError] = useState<string | null>(null)
@@ -997,6 +1004,23 @@ export default function App() {
     } catch {
       setExeSummaryLogs([])
       return []
+    }
+  }
+
+  async function loadCFG(id: string, fid: string) {
+    try {
+      setCfgLoading(true)
+      setCfgError(null)
+      const r = await fetch(`${apiBase}/api/jobs/${id}/callgraph?root=${encodeURIComponent(fid)}&depth=3`)
+      const j = await r.json().catch(() => null)
+      setCfgData(j)
+      return j
+    } catch (e: any) {
+      setCfgError(String(e?.message || e))
+      setCfgData(null)
+      return null
+    } finally {
+      setCfgLoading(false)
     }
   }
 
@@ -1974,6 +1998,19 @@ export default function App() {
               title='Show xrefs (calls in/out) for selected function'
             >
               Xrefs
+            </button>
+
+            <button
+              className={`smallBtn ${showCFG ? 'smallBtnActive' : ''}`}
+              onClick={() => {
+                if (!jobId || !selected) return
+                setShowCFG(true)
+                loadCFG(jobId, selected)
+              }}
+              disabled={!jobId || !selected}
+              title='Show calls_out graph (depth=3)'
+            >
+              CFG
             </button>
 
             <button
@@ -3018,6 +3055,136 @@ export default function App() {
                   <input className='input' value={anthropicDefaultModel} onChange={(e) => setAnthropicDefaultModel(e.target.value)} style={{ padding: '6px 8px', width: 260 }} />
                 </label>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showCFG ? (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            zIndex: 1090,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={() => setShowCFG(false)}
+        >
+          <div
+            style={{
+              background: '#1a1a1a',
+              borderRadius: 12,
+              maxWidth: 1200,
+              width: '100%',
+              height: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18 }}>CFG (calls_out, depth=3)</h3>
+                <div className='secondary' style={{ fontSize: 12, marginTop: 4 }}>
+                  root: {selected ? displayName(selected) : '-'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <button
+                  className='smallBtn'
+                  onClick={() => {
+                    if (jobId && selected) loadCFG(jobId, selected)
+                  }}
+                  disabled={!jobId || !selected}
+                >
+                  Refresh
+                </button>
+                <button className='smallBtn' onClick={() => setShowCFG(false)} style={{ fontSize: 20, padding: '4px 12px' }}>
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: 10, flex: 1, minHeight: 0 }}>
+              {cfgLoading ? (
+                <div className='secondary' style={{ padding: 20 }}>Loading…</div>
+              ) : cfgError ? (
+                <div style={{ padding: 20, color: 'rgba(255,96,96,0.9)', whiteSpace: 'pre-wrap' }}>{cfgError}</div>
+              ) : !cfgData || (cfgData as any)?.status === 'analyzing' ? (
+                <div className='secondary' style={{ padding: 20 }}>No graph data yet.</div>
+              ) : (
+                (() => {
+                  const nodesRaw = Array.isArray((cfgData as any)?.nodes) ? (cfgData as any).nodes : []
+                  const edgesRaw = Array.isArray((cfgData as any)?.edges) ? (cfgData as any).edges : []
+
+                  const rfNodes: Node[] = nodesRaw.map((n: any) => {
+                    const label = `${displayName(n.id)}`
+                    const sj = typeof n.summary_ja === 'string' ? n.summary_ja.trim() : ''
+                    const short = sj ? sj.split(/\r?\n/).slice(0, 4).join('\n') : '(no summary)'
+                    return {
+                      id: String(n.id),
+                      position: { x: 0, y: 0 },
+                      data: {
+                        label: `${label}\n${short}`,
+                      },
+                      style: {
+                        width: 280,
+                        padding: 10,
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        background: 'rgba(255,255,255,0.06)',
+                        fontSize: 12,
+                        whiteSpace: 'pre-wrap',
+                        lineHeight: 1.35,
+                      },
+                    }
+                  })
+
+                  const rfEdges: Edge[] = edgesRaw.map((e: any, i: number) => ({
+                    id: `e-${i}-${e.from}-${e.to}`,
+                    source: String(e.from),
+                    target: String(e.to),
+                    animated: false,
+                    style: { stroke: 'rgba(255,255,255,0.35)' },
+                  }))
+
+                  return (
+                    <div style={{ width: '100%', height: '100%' }}>
+                      <ReactFlow
+                        nodes={rfNodes}
+                        edges={rfEdges}
+                        fitView
+                        onNodeClick={(_, node) => {
+                          const fid = String(node.id)
+                          navigateTo(fid)
+                          setShowCFG(false)
+                        }}
+                      >
+                        <MiniMap />
+                        <Controls />
+                        <Background />
+                      </ReactFlow>
+                    </div>
+                  )
+                })()
+              )}
             </div>
           </div>
         </div>

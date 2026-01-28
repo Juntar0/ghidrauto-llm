@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile, Query
 from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, JSONResponse
@@ -664,6 +664,110 @@ async def get_exe_summary(job_id: str):
     if not p.exists():
         return JSONResponse({"status": "not_started"})
     return JSONResponse(read_json(p, {}))
+
+
+@app.get("/api/jobs/{job_id}/callgraph")
+async def get_callgraph(
+    job_id: str,
+    root: str = Query(..., description="root function id"),
+    depth: int = Query(3, ge=1, le=5),
+):
+    """Return a shallow call graph (calls_out) from root up to depth.
+
+    Nodes include display_name and summary_ja if available.
+    Summary source priority:
+    1) ai/summaries/{fid}.json
+    2) ai/results/{fid}.json (decompile result)
+    """
+
+    ap = _analysis_path(job_id)
+    if not ap.exists():
+        return JSONResponse({"status": "analyzing"}, status_code=202)
+
+    analysis = read_json(ap, {})
+    funcs = analysis.get("functions") or []
+    func_by_id = {str(f.get("id")): f for f in funcs if f.get("id")}
+
+    if root not in func_by_id:
+        raise HTTPException(404, f"function not found: {root}")
+
+    base = Path(settings.work_dir) / job_id
+
+    def load_summary(fid: str) -> tuple[str | None, float | None]:
+        sp = base / "ai" / "summaries" / f"{fid}.json"
+        if sp.exists():
+            obj = read_json(sp, {})
+            sj = obj.get("summary_ja")
+            conf = obj.get("confidence")
+            return (sj if isinstance(sj, str) and sj.strip() else None, float(conf) if isinstance(conf, (int, float)) else None)
+        rp = base / "ai" / "results" / f"{fid}.json"
+        if rp.exists():
+            obj = read_json(rp, {})
+            sj = obj.get("summary_ja")
+            conf = obj.get("confidence")
+            return (sj if isinstance(sj, str) and sj.strip() else None, float(conf) if isinstance(conf, (int, float)) else None)
+        return (None, None)
+
+    # BFS up to depth
+    nodes: dict[str, dict] = {}
+    edges: set[tuple[str, str]] = set()
+
+    q: list[tuple[str, int]] = [(root, 0)]
+    seen: set[str] = set()
+
+    while q:
+        cur, d = q.pop(0)
+        if cur in seen:
+            continue
+        seen.add(cur)
+
+        f = func_by_id.get(cur) or {}
+        sj, conf = load_summary(cur)
+
+        nodes[cur] = {
+            "id": cur,
+            "name": f.get("name") or cur,
+            "entry": f.get("entry"),
+            "is_external": bool(f.get("is_external")),
+            "is_winapi": bool(f.get("is_winapi")),
+            "dll": f.get("dll"),
+            "summary_ja": sj,
+            "summary_confidence": conf,
+        }
+
+        if d >= depth:
+            continue
+
+        outs = f.get("calls_out") or []
+        for callee in outs:
+            cid = str(callee)
+            edges.add((cur, cid))
+            if cid not in seen:
+                q.append((cid, d + 1))
+
+    # ensure nodes exist for edge endpoints
+    for a, b in list(edges):
+        if b not in nodes:
+            f = func_by_id.get(b)
+            sj, conf = load_summary(b)
+            nodes[b] = {
+                "id": b,
+                "name": (f or {}).get("name") or b,
+                "entry": (f or {}).get("entry") if f else None,
+                "is_external": bool((f or {}).get("is_external")) if f else True,
+                "is_winapi": bool((f or {}).get("is_winapi")) if f else False,
+                "dll": (f or {}).get("dll") if f else None,
+                "summary_ja": sj,
+                "summary_confidence": conf,
+            }
+
+    return {
+        "job_id": job_id,
+        "root": root,
+        "depth": depth,
+        "nodes": list(nodes.values()),
+        "edges": [{"from": a, "to": b} for (a, b) in sorted(edges)],
+    }
 
 
 @app.post("/api/jobs/{job_id}/summarize_exe")
