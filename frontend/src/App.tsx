@@ -650,6 +650,8 @@ export default function App() {
     }
   })())
 
+  const [winApiOnly, setWinApiOnly] = useLocalStorageState<boolean>('autore.winApiOnly', false)
+
   const [sidebarWidth, setSidebarWidth] = useLocalStorageState<number>('autore.sidebarWidth', 320)
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorageState<boolean>('autore.sidebarCollapsed', false)
   // Desktop pane splits (0..1): splitA between Disasm|Ghidra, splitB between Ghidra|AI
@@ -714,6 +716,10 @@ export default function App() {
       arr = arr.filter((f) => f.id === entryFunctionId)
     }
 
+    if (winApiOnly) {
+      arr = arr.filter((f: any) => Boolean((f as any).is_winapi))
+    }
+
     const q = fnQuery.trim().toLowerCase()
     if (q) {
       arr = arr.filter((f) => {
@@ -745,7 +751,7 @@ export default function App() {
     }
 
     return [...arr].sort(sorters[sortKey])
-  }, [functions, entryOnly, entryFunctionId, fnQuery, index, sortKey])
+  }, [functions, entryOnly, winApiOnly, entryFunctionId, fnQuery, index, sortKey])
 
   // --- Recommended panels (User Entry -> Hot Spots -> OEP)
   const mainCandidates = useMemo(() => {
@@ -1690,6 +1696,17 @@ export default function App() {
                   onChange={(e) => setFnQuery(e.target.value)}
                   placeholder='Search: FUN_ / name / proposed_name'
                 />
+              </div>
+
+              <div style={{ marginTop: 8, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+                <label className='secondary' style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input type='checkbox' checked={entryOnly} onChange={(e) => setEntryOnly(e.target.checked)} />
+                  entry only
+                </label>
+                <label className='secondary' style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input type='checkbox' checked={winApiOnly} onChange={(e) => setWinApiOnly(e.target.checked)} />
+                  Win API only
+                </label>
               </div>
 
               <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
