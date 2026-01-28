@@ -21,40 +21,45 @@ import 'highlight.js/styles/github-dark.css'
 hljs.registerLanguage('cpp', cpp)
 hljs.registerLanguage('x86asm', x86asm)
 
-// Add clickable function links to highlighted HTML
-function addFunctionLinks(
-  html: string,
-  entryAddrToId: Map<string, string>,
-  _nameToId: Map<string, string>,
-  _onNavigate: (fid: string) => void,
-  displayNameById: Map<string, string>
-): string {
-  // Replace function name patterns with clickable spans
-  let result = html
-  
-  // Pattern 1: FUN_00401000, thunk_FUN_00401000
-  result = result.replace(/\b((?:FUN_|thunk_FUN_)([0-9A-Fa-f]+))\b/g, (match, _fullName, addr) => {
-    const lowerAddr = addr.toLowerCase()
-    const fid = entryAddrToId.get(lowerAddr) || entryAddrToId.get(`0x${lowerAddr}`)
-    if (fid) {
-      const displayName = displayNameById.get(fid) || match
-      return `<span class="codeLink" data-fid="${fid}" title="${fid}">${displayName}</span>`
-    }
-    return match
+function escapeHtml(s: string) {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+const LINK_TOKEN_PREFIX = '__CLAWD_LINK__'
+
+function injectLinkTokens(line: string, entryAddrToId: Map<string, string>) {
+  // Replace common function reference patterns with stable tokens that survive highlight.js.
+  // We'll swap these tokens back to clickable <span> after highlighting.
+  let out = line
+
+  // FUN_00401000 / thunk_FUN_00401000
+  out = out.replace(/\b(?:FUN_|thunk_FUN_)([0-9A-Fa-f]+)\b/g, (m, addr) => {
+    const a = String(addr).toLowerCase()
+    const fid = entryAddrToId.get(a) || entryAddrToId.get(`0x${a}`)
+    return fid ? `${LINK_TOKEN_PREFIX}${fid}__` : m
   })
-  
-  // Pattern 2: sub_00401000, function_00401000
-  result = result.replace(/\b((?:sub|function)_([0-9A-Fa-f]+))\b/g, (match, _fullName, addr) => {
-    const lowerAddr = addr.toLowerCase()
-    const fid = entryAddrToId.get(lowerAddr) || entryAddrToId.get(`0x${lowerAddr}`)
-    if (fid) {
-      const displayName = displayNameById.get(fid) || match
-      return `<span class="codeLink" data-fid="${fid}" title="${fid}">${displayName}</span>`
-    }
-    return match
+
+  // sub_00401000 / function_00401000
+  out = out.replace(/\b(?:sub|function)_([0-9A-Fa-f]+)\b/g, (m, addr) => {
+    const a = String(addr).toLowerCase()
+    const fid = entryAddrToId.get(a) || entryAddrToId.get(`0x${a}`)
+    return fid ? `${LINK_TOKEN_PREFIX}${fid}__` : m
   })
-  
-  return result
+
+  return out
+}
+
+function replaceLinkTokens(html: string, displayNameById: Map<string, string>) {
+  return html.replace(new RegExp(`${LINK_TOKEN_PREFIX}([^_][^_]*)__`, 'g'), (_m, fid) => {
+    const f = String(fid)
+    const label = displayNameById.get(f) || f
+    return `<span class="codeLink" data-fid="${escapeHtml(f)}" title="${escapeHtml(f)}">${escapeHtml(label)}</span>`
+  })
 }
 
 type Analysis = {
@@ -1625,18 +1630,21 @@ export default function App() {
     const cached = ghidraHtmlCacheRef.current.get(key)
     if (cached) return cached
 
-    const rows = ghidraRows.map((r) =>
-      addFunctionLinks(
-        hljs.highlight(r.text, { language: 'cpp' }).value,
-        entryAddrToId,
-        nameToId,
-        () => {},
-        displayNameById,
-      ),
-    )
+    // 1) Inject link tokens into raw text (per line)
+    const raw = ghidraRows.map((r) => injectLinkTokens(r.text, entryAddrToId)).join('\n')
+
+    // 2) Highlight once for the whole block
+    const highlighted = hljs.highlight(raw, { language: 'cpp' }).value
+
+    // 3) Replace tokens with clickable spans using displayNameById
+    const linked = replaceLinkTokens(highlighted, displayNameById)
+
+    // 4) Split back to rows (hljs preserves newlines)
+    const rows = linked.split('\n')
+
     ghidraHtmlCacheRef.current.set(key, rows)
     return rows
-  }, [jobId, selected, ghidraRows, ghidraDecomp, entryAddrToId, nameToId, displayNameById])
+  }, [jobId, selected, ghidraRows, ghidraDecomp, entryAddrToId, displayNameById])
 
   async function loadCalledRanking() {
     if (!jobId) return
@@ -1865,11 +1873,8 @@ export default function App() {
               <div
                 className='pseudoCodeContent'
                 dangerouslySetInnerHTML={{
-                  __html: addFunctionLinks(
-                    hljs.highlight(line, { language: 'cpp' }).value,
-                    entryAddrToId,
-                    nameToId,
-                    navigateTo,
+                  __html: replaceLinkTokens(
+                    hljs.highlight(injectLinkTokens(line, entryAddrToId), { language: 'cpp' }).value,
                     displayNameById
                   )
                 }}
