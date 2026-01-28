@@ -103,23 +103,25 @@ def run_capa_analysis(
         return
     
     # Run CAPA
+    # Note: CAPA uses -j (not --json) and outputs to stdout
     cmd = [
         "capa",
         str(sample_path),
-        "--json",
-        str(capa_json),
+        "-j",
     ]
     
     log_path = paths["extract"] / "capa.log"
     try:
-        with open(log_path, "w", encoding="utf-8", errors="replace") as log:
-            subprocess.run(
-                cmd,
-                check=True,
-                timeout=timeout_seconds,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-            )
+        # Capture JSON output to file, stderr to log
+        with open(capa_json, "w", encoding="utf-8", errors="replace") as out:
+            with open(log_path, "w", encoding="utf-8", errors="replace") as log:
+                subprocess.run(
+                    cmd,
+                    check=True,
+                    timeout=timeout_seconds,
+                    stdout=out,
+                    stderr=log,
+                )
     except subprocess.TimeoutExpired:
         capa_json.write_text(json.dumps({"error": "capa timeout", "timeout": timeout_seconds}))
     except subprocess.CalledProcessError as e:
