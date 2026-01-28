@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
-import ReactFlow, { Background, Controls, MiniMap, type Edge, type Node } from 'reactflow'
+import ReactFlow, { Background, Controls, MiniMap, type Edge, type Node, type NodeProps } from 'reactflow'
 import 'reactflow/dist/style.css'
 
 type Analysis = {
@@ -273,6 +273,41 @@ function normalizeAiResult(data: AiResult): AiResult {
 }
 
 // CallTreeView Component
+function CFGNode({ data }: NodeProps<{ title: string; summary: string; hasSummary: boolean }>) {
+  return (
+    <div
+      style={{
+        width: 300,
+        height: 140,
+        padding: 12,
+        borderRadius: 10,
+        border: '1px solid rgba(255,255,255,0.16)',
+        background: 'rgba(10,10,10,0.85)',
+        color: 'rgba(255,255,255,0.92)',
+        fontSize: 13,
+        lineHeight: 1.45,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{data.title}</div>
+      <div
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          whiteSpace: 'pre-wrap',
+          color: data.hasSummary ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.45)',
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          paddingTop: 8,
+        }}
+      >
+        {data.summary}
+      </div>
+    </div>
+  )
+}
+
 function CallTreeView({
   functions,
   selected,
@@ -3184,28 +3219,19 @@ export default function App() {
 
                   const rfNodes: Node[] = nodesRaw.map((n: any) => {
                     const id = String(n.id)
-                    const label = `${displayName(id)}`
+                    const title = `${displayName(id)}`
                     const sj = typeof n.summary_ja === 'string' ? n.summary_ja.trim() : ''
-                    const short = sj ? sj.split(/\r?\n/).slice(0, 4).join('\n') : '(no summary)'
+                    const hasSummary = Boolean(sj)
                     return {
                       id,
+                      type: 'cfgNode',
                       position: positions.get(id) || { x: 0, y: 0 },
                       data: {
-                        label: `${label}\n${short}`,
+                        title,
+                        summary: hasSummary ? sj : '(no summary)',
+                        hasSummary,
                       },
                       draggable: false,
-                      style: {
-                        width: 300,
-                        minHeight: 110,
-                        padding: 12,
-                        borderRadius: 10,
-                        border: id === rootId ? '1px solid rgba(77,163,255,0.65)' : '1px solid rgba(255,255,255,0.16)',
-                        background: 'rgba(10,10,10,0.85)',
-                        color: 'rgba(255,255,255,0.92)',
-                        fontSize: 13,
-                        whiteSpace: 'pre-wrap',
-                        lineHeight: 1.45,
-                      },
                     }
                   })
 
@@ -3222,7 +3248,18 @@ export default function App() {
                       <ReactFlow
                         nodes={rfNodes}
                         edges={rfEdges}
+                        nodeTypes={{ cfgNode: CFGNode }}
                         fitView
+                        fitViewOptions={{ padding: 0.2 }}
+                        onInit={(rf) => {
+                          // Center view on root node on open.
+                          try {
+                            if (rootId) rf.fitView({ nodes: [{ id: rootId } as any], padding: 0.2 })
+                            else rf.fitView({ padding: 0.2 })
+                          } catch {
+                            // ignore
+                          }
+                        }}
                         onNodeClick={(_, node) => {
                           const fid = String(node.id)
                           navigateTo(fid)

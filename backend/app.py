@@ -693,20 +693,28 @@ async def get_callgraph(
 
     base = Path(settings.work_dir) / job_id
 
-    def load_summary(fid: str) -> tuple[str | None, float | None]:
+    def load_summary(fid: str) -> tuple[str | None, float | None, str | None]:
         sp = base / "ai" / "summaries" / f"{fid}.json"
         if sp.exists():
             obj = read_json(sp, {})
             sj = obj.get("summary_ja")
             conf = obj.get("confidence")
-            return (sj if isinstance(sj, str) and sj.strip() else None, float(conf) if isinstance(conf, (int, float)) else None)
+            return (
+                sj if isinstance(sj, str) and sj.strip() else None,
+                float(conf) if isinstance(conf, (int, float)) else None,
+                "summaries",
+            )
         rp = base / "ai" / "results" / f"{fid}.json"
         if rp.exists():
             obj = read_json(rp, {})
             sj = obj.get("summary_ja")
             conf = obj.get("confidence")
-            return (sj if isinstance(sj, str) and sj.strip() else None, float(conf) if isinstance(conf, (int, float)) else None)
-        return (None, None)
+            return (
+                sj if isinstance(sj, str) and sj.strip() else None,
+                float(conf) if isinstance(conf, (int, float)) else None,
+                "results",
+            )
+        return (None, None, None)
 
     # BFS up to depth
     nodes: dict[str, dict] = {}
@@ -722,7 +730,7 @@ async def get_callgraph(
         seen.add(cur)
 
         f = func_by_id.get(cur) or {}
-        sj, conf = load_summary(cur)
+        sj, conf, src = load_summary(cur)
 
         nodes[cur] = {
             "id": cur,
@@ -733,6 +741,7 @@ async def get_callgraph(
             "dll": f.get("dll"),
             "summary_ja": sj,
             "summary_confidence": conf,
+            "summary_source": src,
         }
 
         if d >= depth:
@@ -749,7 +758,7 @@ async def get_callgraph(
     for a, b in list(edges):
         if b not in nodes:
             f = func_by_id.get(b)
-            sj, conf = load_summary(b)
+            sj, conf, src = load_summary(b)
             nodes[b] = {
                 "id": b,
                 "name": (f or {}).get("name") or b,
@@ -759,6 +768,7 @@ async def get_callgraph(
                 "dll": (f or {}).get("dll") if f else None,
                 "summary_ja": sj,
                 "summary_confidence": conf,
+                "summary_source": src,
             }
 
     return {
