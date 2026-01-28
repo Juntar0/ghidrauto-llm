@@ -610,6 +610,7 @@ export default function App() {
   const [exeSummaryLogs, setExeSummaryLogs] = useState<any[]>([])
 
   const [showCFG, setShowCFG] = useState<boolean>(false)
+  const [cfgRootId, setCfgRootId] = useState<string | null>(null)
   const [cfgData, setCfgData] = useState<any>(null)
   const [cfgLoading, setCfgLoading] = useState<boolean>(false)
   const [cfgError, setCfgError] = useState<string | null>(null)
@@ -2045,6 +2046,7 @@ export default function App() {
               className={`smallBtn ${showCFG ? 'smallBtnActive' : ''}`}
               onClick={() => {
                 if (!jobId || !selected) return
+                setCfgRootId(selected)
                 setShowCFG(true)
                 loadCFG(jobId, selected, cfgDepth)
               }}
@@ -3144,7 +3146,7 @@ export default function App() {
               <div>
                 <h3 style={{ margin: 0, fontSize: 18 }}>CFG (calls_out)</h3>
                 <div className='secondary' style={{ fontSize: 12, marginTop: 4 }}>
-                  root: {selected ? displayName(selected) : '-'}
+                  root: {cfgRootId ? displayName(cfgRootId) : selected ? displayName(selected) : '-'}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -3156,7 +3158,8 @@ export default function App() {
                     onChange={(e) => {
                       const d = Number(e.target.value)
                       setCfgDepth(d)
-                      if (jobId && selected) loadCFG(jobId, selected, d)
+                      const root = cfgRootId || selected
+                      if (jobId && root) loadCFG(jobId, root, d)
                     }}
                     style={{ padding: '6px 8px', width: 90 }}
                   >
@@ -3168,7 +3171,8 @@ export default function App() {
                 <button
                   className='smallBtn'
                   onClick={() => {
-                    if (jobId && selected) loadCFG(jobId, selected, cfgDepth)
+                    const root = cfgRootId || selected
+                    if (jobId && root) loadCFG(jobId, root, cfgDepth)
                   }}
                   disabled={!jobId || !selected}
                 >
@@ -3193,7 +3197,7 @@ export default function App() {
                   const edgesRaw = Array.isArray((cfgData as any)?.edges) ? (cfgData as any).edges : []
 
                   // simple layout: BFS layers by depth, stagger vertically
-                  const rootId = String((cfgData as any)?.root || selected || '')
+                  const rootId = String((cfgData as any)?.root || cfgRootId || selected || '')
                   const children = new Map<string, string[]>()
                   for (const e of edgesRaw) {
                     const a = String(e.from)
@@ -3287,8 +3291,11 @@ export default function App() {
                         }}
                         onNodeClick={(_, node) => {
                           const fid = String(node.id)
+                          // Update underlying panes
                           navigateTo(fid)
-                          setShowCFG(false)
+                          // And re-root the CFG modal to the clicked node
+                          setCfgRootId(fid)
+                          if (jobId) loadCFG(jobId, fid, cfgDepth)
                         }}
                       >
                         <MiniMap nodeColor={() => 'rgba(255,255,255,0.18)'} maskColor='rgba(0,0,0,0.5)' />
