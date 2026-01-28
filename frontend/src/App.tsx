@@ -726,7 +726,7 @@ export default function App() {
 
   const [winApiOnly, setWinApiOnly] = useLocalStorageState<boolean>('autore.winApiOnly', false)
 
-  const [sidebarWidth, setSidebarWidth] = useLocalStorageState<number>('autore.sidebarWidth', 320)
+  const [sidebarWidth, setSidebarWidth] = useLocalStorageState<number>('autore.sidebarWidth', 380)
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorageState<boolean>('autore.sidebarCollapsed', false)
   // Desktop pane splits (0..1): splitA between Disasm|Ghidra, splitB between Ghidra|AI
   const [splitA, setSplitA] = useLocalStorageState<number>('autore.splitA', 0.33)
@@ -1549,14 +1549,14 @@ export default function App() {
     return out
   }
 
-  const leftW = sidebarCollapsed ? 56 : clamp(sidebarWidth, 280, 520)
+  const leftW = sidebarCollapsed ? 56 : clamp(sidebarWidth, 280, 800)
 
   const panesStyle = isMobile
     ? undefined
     : ({ gridTemplateColumns: `${splitA * 100}% 6px ${(splitB - splitA) * 100}% 6px ${(1 - splitB) * 100}%` } as any)
 
   const sidebarStyle = isMobile
-    ? ({ width: clamp(sidebarWidth, 280, 420), display: mobileSidebarOpen ? 'flex' : 'none' } as any)
+    ? ({ width: clamp(sidebarWidth, 280, 500), display: mobileSidebarOpen ? 'flex' : 'none' } as any)
     : ({ width: leftW } as any)
 
   const selectedStatus = selected ? (index[selected]?.status ?? ai?.status) : undefined
