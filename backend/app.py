@@ -583,6 +583,119 @@ async def enqueue_decompile(
     return {"status": "queued"}
 
 
+@app.get("/api/jobs/{job_id}/functions/{function_id}/summary")
+async def get_function_summary(job_id: str, function_id: str):
+    p = Path(settings.work_dir) / job_id / "ai" / "summaries" / f"{function_id}.json"
+    if p.exists():
+        return JSONResponse(read_json(p, {}))
+
+    idx = Path(settings.work_dir) / job_id / "ai" / "index.json"
+    index = read_json(idx, {})
+    st = index.get(function_id, {}) if isinstance(index.get(function_id), dict) else {}
+    return JSONResponse({"function_id": function_id, "status": st.get("summary_status") or "not_started", **{k: v for k, v in st.items() if str(k).startswith('summary_')}})
+
+
+@app.post("/api/jobs/{job_id}/functions/{function_id}/summarize")
+async def enqueue_summarize(
+    job_id: str,
+    function_id: str,
+    provider: str | None = Form(None),
+    model: str | None = Form(None),
+    openai_base_url: str | None = Form(None),
+    openai_api_key: str | None = Form(None),
+    openai_api_mode: str | None = Form(None),
+    openai_reasoning: str | None = Form(None),
+    guardrail_max_attempts: int | None = Form(None),
+    guardrail_min_confidence: float | None = Form(None),
+    force: bool = Form(False),
+):
+    """Enqueue summary_ja generation for a function (no pseudocode).
+
+    Stores output in ai/summaries/{fid}.json and status in ai/index.json under summary_* keys.
+    """
+
+    idxp = Path(settings.work_dir) / job_id / "ai" / "index.json"
+    index = read_json(idxp, {})
+    cur = index.get(function_id) if isinstance(index.get(function_id), dict) else {}
+
+    if cur and cur.get("summary_status") in ("queued", "running"):
+        return {"status": cur.get("summary_status"), "cached": False}
+
+    summ_path = Path(settings.work_dir) / job_id / "ai" / "summaries" / f"{function_id}.json"
+    if not force and summ_path.exists():
+        return {"status": "ok", "cached": True}
+
+    jst = timezone(timedelta(hours=9))
+    index[function_id] = {
+        **cur,
+        "summary_status": "queued",
+        "summary_queued_at": datetime.now(jst).isoformat(),
+        "summary_provider": provider,
+        "summary_model": model,
+    }
+    write_json_atomic(idxp, index)
+
+    enqueued_at = datetime.now(jst).isoformat()
+    req = {
+        "job_id": job_id,
+        "function_id": function_id,
+        "task": "summarize",
+        "provider": provider,
+        "model": model,
+        "openai_base_url": openai_base_url,
+        "openai_api_key": openai_api_key,
+        "openai_api_mode": openai_api_mode,
+        "openai_reasoning": openai_reasoning,
+        "guardrail_max_attempts": guardrail_max_attempts,
+        "guardrail_min_confidence": guardrail_min_confidence,
+        "force": bool(force),
+        "enqueued_at": enqueued_at,
+    }
+    qp = Path(settings.work_dir) / job_id / "queue" / "requests.jsonl"
+    with open(qp, "a", encoding="utf-8") as f:
+        f.write(json.dumps(req, ensure_ascii=False) + "\n")
+
+    return {"status": "queued"}
+
+
+@app.get("/api/jobs/{job_id}/exe_summary")
+async def get_exe_summary(job_id: str):
+    p = Path(settings.work_dir) / job_id / "ai" / "exe_summary.json"
+    if not p.exists():
+        return JSONResponse({"status": "not_started"})
+    return JSONResponse(read_json(p, {}))
+
+
+@app.post("/api/jobs/{job_id}/summarize_exe")
+async def enqueue_summarize_exe(
+    job_id: str,
+    provider: str | None = Form(None),
+    model: str | None = Form(None),
+    openai_base_url: str | None = Form(None),
+    openai_api_key: str | None = Form(None),
+    openai_api_mode: str | None = Form(None),
+    openai_reasoning: str | None = Form(None),
+):
+    """Generate/update EXE-level summary from stored per-function summaries."""
+    jst = timezone(timedelta(hours=9))
+    req = {
+        "job_id": job_id,
+        "function_id": "__exe__",
+        "task": "summarize_exe",
+        "provider": provider,
+        "model": model,
+        "openai_base_url": openai_base_url,
+        "openai_api_key": openai_api_key,
+        "openai_api_mode": openai_api_mode,
+        "openai_reasoning": openai_reasoning,
+        "enqueued_at": datetime.now(jst).isoformat(),
+    }
+    qp = Path(settings.work_dir) / job_id / "queue" / "requests.jsonl"
+    with open(qp, "a", encoding="utf-8") as f:
+        f.write(json.dumps(req, ensure_ascii=False) + "\n")
+    return {"status": "queued"}
+
+
 @app.get("/api/jobs/{job_id}/stream")
 async def stream(job_id: str):
     idxp = Path(settings.work_dir) / job_id / "ai" / "index.json"

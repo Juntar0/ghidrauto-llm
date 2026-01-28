@@ -100,6 +100,22 @@ def _update_index(idx_path: Path, fid: str, patch: dict) -> dict:
     return index
 
 
+def _write_function_summary(base: Path, fid: str, summary_ja: str, confidence: float | None, *, source: str, model: str, provider: str) -> None:
+    p = base / "ai" / "summaries" / f"{fid}.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "function_id": fid,
+        "status": "ok",
+        "summary_ja": summary_ja,
+        "confidence": confidence,
+        "source": source,
+        "provider": provider,
+        "model": model,
+        "updated_at": _now_jst_iso(),
+    }
+    _atomic_write(p, payload)
+
+
 def _load_json(path: Path, default):
     if not path.exists():
         return default
@@ -117,10 +133,11 @@ Hard rules:
 - If Ghidra's C-like decompile conflicts with disassembly, reconcile and mention the conflict.
 - Return ONLY valid JSON (no markdown fences, no extra commentary).
 
-Output JSON keys:
+Output JSON keys (ALL REQUIRED):
 - pseudocode (string)  // readable C-like pseudocode
 - proposed_name (string|null)
 - signature (string|null) // best-effort function prototype
+- summary_ja (string) // Japanese summary of what the function does (3-8 lines)
 - key_points (array of strings)
 - iocs (array of strings)
 - needs_review (array of strings)
@@ -129,6 +146,32 @@ Output JSON keys:
 Notes:
 - Use provided type_context (Ghidra prototype, API signatures, inferred types).
 - Use provided minimal_context (calls_in/out, strings, imports) sparingly.
+"""
+
+PROMPT_SUMMARY_JA = """You are a senior reverse engineer.
+You will be given a function context bundle extracted from Ghidra.
+Your job: write a concise and accurate Japanese summary of what the function does.
+
+Hard rules:
+- Do NOT execute anything.
+- Return ONLY valid JSON.
+- Do NOT include pseudocode.
+
+Output JSON keys (ALL REQUIRED):
+- summary_ja (string) // 3-8 lines, Japanese. mention purpose + important behaviors + noteworthy APIs/IOCs if any.
+- confidence (number 0..1)
+"""
+
+PROMPT_EXE_SUMMARY_JA = """You are a senior reverse engineer.
+You will be given a set of per-function Japanese summaries for an executable.
+Your job: produce a high-precision Japanese summary for the whole EXE.
+
+Hard rules:
+- Return ONLY valid JSON.
+
+Output JSON keys (ALL REQUIRED):
+- summary_ja (string) // Japanese, structured: overview, behavior, network/file/registry/process, persistence, crypto, indicators, uncertainties.
+- confidence (number 0..1)
 """
 
 
@@ -231,6 +274,8 @@ def call_openai_responses(
     model: str,
     user_text: str,
     reasoning: str | None = None,
+    *,
+    system_prompt: str = PROMPT_V2,
 ) -> dict:
     """OpenAI-compatible responses.create() call.
 
@@ -250,7 +295,7 @@ def call_openai_responses(
     body: dict = {
         "model": model,
         "input": [
-            {"role": "system", "content": PROMPT_V2},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_text[:45000]},
         ],
         "max_output_tokens": 6000,
@@ -301,6 +346,8 @@ def call_openai_chat(
     model: str,
     user_text: str,
     reasoning: str | None = None,
+    *,
+    system_prompt: str = PROMPT_V2,
 ) -> dict:
     """OpenAI-compatible chat.completions call.
 
@@ -326,7 +373,7 @@ def call_openai_chat(
         "temperature": 0.2,
         "max_tokens": 6000,
         "messages": [
-            {"role": "system", "content": PROMPT_V2},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_text[:45000]},
         ],
     }
@@ -373,7 +420,7 @@ def call_openai_chat(
 
 
 
-def call_anthropic(api_key: str, model: str, user_text: str) -> dict:
+def call_anthropic(api_key: str, model: str, user_text: str, *, system_prompt: str = PROMPT_V2) -> dict:
     headers = {
         "x-api-key": api_key,
         "anthropic-version": "2023-06-01",
@@ -384,7 +431,7 @@ def call_anthropic(api_key: str, model: str, user_text: str) -> dict:
         # Bump to reduce truncation; still bounded for latency/cost.
         "max_tokens": 6000,
         "temperature": 0.2,
-        "system": PROMPT_V2,
+        "system": system_prompt,
         "messages": [
             {"role": "user", "content": user_text[:45000]},
         ],
@@ -674,12 +721,15 @@ def _build_context_bundle(base: Path, fid: str, disasm_text: str) -> tuple[str, 
 
 
 def _validate_decompile_obj(obj: dict, min_conf: float) -> tuple[bool, str | None]:
-    # Must be a dict with at least pseudocode and confidence.
+    # Must be a dict with at least pseudocode, summary_ja and confidence.
     if not isinstance(obj, dict):
         return False, "not a JSON object"
     pc = obj.get("pseudocode")
     if not isinstance(pc, str) or len(pc.strip()) < 80:
         return False, "pseudocode too short/missing"
+    sj = obj.get("summary_ja")
+    if not isinstance(sj, str) or len(sj.strip()) < 30:
+        return False, "summary_ja too short/missing"
     conf = obj.get("confidence")
     try:
         conf_f = float(conf)
@@ -687,6 +737,23 @@ def _validate_decompile_obj(obj: dict, min_conf: float) -> tuple[bool, str | Non
         return False, "confidence missing/not a number"
     if conf_f < min_conf:
         return False, f"confidence below threshold ({conf_f:.2f} < {min_conf:.2f})"
+    return True, None
+
+
+def _validate_summary_obj(obj: dict, min_conf: float) -> tuple[bool, str | None]:
+    if not isinstance(obj, dict):
+        return False, "not a JSON object"
+    sj = obj.get("summary_ja")
+    if not isinstance(sj, str) or len(sj.strip()) < 30:
+        return False, "summary_ja too short/missing"
+    conf = obj.get("confidence")
+    try:
+        conf_f = float(conf)
+    except Exception:
+        return False, "confidence missing/not a number"
+    if conf_f < max(0.0, min_conf * 0.7):
+        # Allow slightly lower confidence for summary-only.
+        return False, f"confidence below threshold ({conf_f:.2f})"
     return True, None
 
 
@@ -698,8 +765,89 @@ def process_request(s: Settings, req: dict) -> None:
         s.anthropic_model_default if provider == "anthropic" else s.openai_model_default
     )
     force = bool(req.get("force") or False)
+    task = (req.get("task") or "decompile").strip().lower()
 
     base = Path(s.work_dir) / job_id
+
+    # Special task: build EXE-level summary from stored per-function summaries.
+    if task in ("summarize_exe", "exe_summary", "summarize_binary"):
+        exe_out = base / "ai" / "exe_summary.json"
+        lock_path = base / "ai" / "locks" / "__exe_summary__.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Lock
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+        except FileExistsError:
+            return
+
+        try:
+            # Load all function summaries
+            summ_dir = base / "ai" / "summaries"
+            items = []
+            if summ_dir.exists():
+                for fp in sorted(summ_dir.glob('*.json')):
+                    try:
+                        obj = json.loads(fp.read_text(encoding='utf-8'))
+                        sj = obj.get('summary_ja')
+                        if isinstance(sj, str) and sj.strip():
+                            items.append({"function_id": obj.get("function_id") or fp.stem, "summary_ja": sj.strip()})
+                    except Exception:
+                        continue
+
+            if not items:
+                _atomic_write(exe_out, {"status": "error", "error": "no function summaries yet", "updated_at": _now_jst_iso()})
+                return
+
+            # Build prompt input
+            joined = "\n\n".join([f"[{it['function_id']}]\n{it['summary_ja']}" for it in items[:400]])
+            user_text = (
+                "Per-function summaries (Japanese):\n" + joined + "\n\n" +
+                "Now generate an EXE-level summary as JSON."
+            )
+
+            result = None
+            if provider == 'anthropic':
+                if not s.anthropic_api_key:
+                    raise RuntimeError('ANTHROPIC_API_KEY not set')
+                result = call_anthropic(s.anthropic_api_key, model, user_text, system_prompt=PROMPT_EXE_SUMMARY_JA)
+            else:
+                base_url = (req.get('openai_base_url') or s.openai_base_url)
+                api_key = (req.get('openai_api_key') or s.openai_api_key)
+                if not base_url:
+                    raise RuntimeError('OPENAI_BASE_URL not set')
+                api_mode = (req.get('openai_api_mode') or 'chat').strip().lower()
+                reasoning = (req.get('openai_reasoning') or '').strip().lower() or None
+                if api_mode == 'responses':
+                    result = call_openai_responses(base_url, api_key, model, user_text, reasoning=reasoning, system_prompt=PROMPT_EXE_SUMMARY_JA)
+                else:
+                    result = call_openai_chat(base_url, api_key, model, user_text, reasoning=reasoning, system_prompt=PROMPT_EXE_SUMMARY_JA)
+
+            ok, why = _validate_summary_obj(result or {}, s.guardrail_min_confidence)
+            if not ok:
+                raise RuntimeError(f"exe summary invalid: {why}")
+
+            payload = {
+                "status": "ok",
+                "provider": provider,
+                "model": model,
+                "summary_ja": (result or {}).get('summary_ja'),
+                "confidence": float((result or {}).get('confidence', 0.5)),
+                "functions_n": len(items),
+                "updated_at": _now_jst_iso(),
+            }
+            exe_out.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write(exe_out, payload)
+        except Exception as e:
+            exe_out.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write(exe_out, {"status": "error", "error": str(e), "updated_at": _now_jst_iso()})
+        finally:
+            try:
+                os.unlink(lock_path)
+            except Exception:
+                pass
+        return
 
     _append_log(
         base,
@@ -715,7 +863,10 @@ def process_request(s: Settings, req: dict) -> None:
     )
     disasm_path = base / "extract" / "disasm" / f"{fid}.txt"
     idx_path = base / "ai" / "index.json"
-    out_path = base / "ai" / "results" / f"{fid}.json"
+
+    is_summary_task = task in ("summarize", "summary", "summarize_function")
+    out_path = (base / "ai" / "summaries" / f"{fid}.json") if is_summary_task else (base / "ai" / "results" / f"{fid}.json")
+
     lock_path = base / "ai" / "locks" / f"{fid}.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -763,27 +914,50 @@ def process_request(s: Settings, req: dict) -> None:
             return
 
     try:
-        _update_index(
-            idx_path,
-            fid,
-            {
-                "status": "running",
-                "started_at": _now_jst_iso(),
-                "provider": provider,
-                "model": model,
-                "enqueued_at": req.get("enqueued_at"),
-            },
-        )
-        _append_log(
-            base,
-            {
-                "ts": _now_jst_iso(),
-                "job_id": job_id,
-                "function_id": fid,
-                "event": "decompile_started",
-                "model": model,
-            },
-        )
+        if task in ("summarize", "summary", "summarize_function"):
+            _update_index(
+                idx_path,
+                fid,
+                {
+                    "summary_status": "running",
+                    "summary_started_at": _now_jst_iso(),
+                    "summary_provider": provider,
+                    "summary_model": model,
+                    "summary_enqueued_at": req.get("enqueued_at"),
+                },
+            )
+            _append_log(
+                base,
+                {
+                    "ts": _now_jst_iso(),
+                    "job_id": job_id,
+                    "function_id": fid,
+                    "event": "summary_started",
+                    "model": model,
+                },
+            )
+        else:
+            _update_index(
+                idx_path,
+                fid,
+                {
+                    "status": "running",
+                    "started_at": _now_jst_iso(),
+                    "provider": provider,
+                    "model": model,
+                    "enqueued_at": req.get("enqueued_at"),
+                },
+            )
+            _append_log(
+                base,
+                {
+                    "ts": _now_jst_iso(),
+                    "job_id": job_id,
+                    "function_id": fid,
+                    "event": "decompile_started",
+                    "model": model,
+                },
+            )
 
         if not disasm_path.exists():
             raise RuntimeError("disasm not found")
@@ -796,17 +970,29 @@ def process_request(s: Settings, req: dict) -> None:
         if (not force) and out_path.exists():
             existing = _load_json(out_path, {})
             if existing.get("analysis_hash") == ah and existing.get("status") == "ok":
-                _update_index(
-                    idx_path,
-                    fid,
-                    {
-                        "status": "ok",
-                        "updated_at": existing.get("updated_at"),
-                        "confidence": existing.get("confidence"),
-                        "proposed_name": existing.get("proposed_name"),
-                        "model": existing.get("model"),
-                    },
-                )
+                if is_summary_task:
+                    _update_index(
+                        idx_path,
+                        fid,
+                        {
+                            "summary_status": "ok",
+                            "summary_updated_at": existing.get("updated_at"),
+                            "summary_confidence": existing.get("confidence"),
+                            "summary_model": existing.get("model"),
+                        },
+                    )
+                else:
+                    _update_index(
+                        idx_path,
+                        fid,
+                        {
+                            "status": "ok",
+                            "updated_at": existing.get("updated_at"),
+                            "confidence": existing.get("confidence"),
+                            "proposed_name": existing.get("proposed_name"),
+                            "model": existing.get("model"),
+                        },
+                    )
                 _append_log(
                     base,
                     {
@@ -816,6 +1002,7 @@ def process_request(s: Settings, req: dict) -> None:
                         "event": "cache_hit",
                         "model": existing.get("model"),
                         "updated_at": existing.get("updated_at"),
+                        "task": task,
                     },
                 )
                 return
@@ -864,7 +1051,12 @@ def process_request(s: Settings, req: dict) -> None:
                 if provider == "anthropic":
                     if not s.anthropic_api_key:
                         raise RuntimeError("ANTHROPIC_API_KEY not set")
-                    result = call_anthropic(s.anthropic_api_key, model, user_text_cur)
+                    result = call_anthropic(
+                        s.anthropic_api_key,
+                        model,
+                        user_text_cur,
+                        system_prompt=(PROMPT_SUMMARY_JA if is_summary_task else PROMPT_V2),
+                    )
                 elif provider in ("openai", "vllm"):
                     base_url = (req.get("openai_base_url") or s.openai_base_url)
                     api_key = (req.get("openai_api_key") or s.openai_api_key)
@@ -876,9 +1068,23 @@ def process_request(s: Settings, req: dict) -> None:
                         reasoning = None
 
                     if api_mode == "responses":
-                        result = call_openai_responses(base_url, api_key, model, user_text_cur, reasoning=reasoning)
+                        result = call_openai_responses(
+                            base_url,
+                            api_key,
+                            model,
+                            user_text_cur,
+                            reasoning=reasoning,
+                            system_prompt=(PROMPT_SUMMARY_JA if is_summary_task else PROMPT_V2),
+                        )
                     else:
-                        result = call_openai_chat(base_url, api_key, model, user_text_cur, reasoning=reasoning)
+                        result = call_openai_chat(
+                            base_url,
+                            api_key,
+                            model,
+                            user_text_cur,
+                            reasoning=reasoning,
+                            system_prompt=(PROMPT_SUMMARY_JA if is_summary_task else PROMPT_V2),
+                        )
                 else:
                     raise RuntimeError(f"unknown provider: {provider}")
             except Exception as e:
@@ -914,7 +1120,7 @@ def process_request(s: Settings, req: dict) -> None:
                 },
             )
 
-            ok, why = _validate_decompile_obj(result, min_conf)
+            ok, why = (_validate_summary_obj(result, min_conf) if is_summary_task else _validate_decompile_obj(result, min_conf))
             if ok:
                 break
 
@@ -924,7 +1130,7 @@ def process_request(s: Settings, req: dict) -> None:
                 user_text
                 + "\n\n---\nGuardrail: The previous output was not acceptable ("
                 + str(why)
-                + "). Produce better JSON ONLY, with higher confidence and more complete pseudocode.\n"
+                + ("). Produce better JSON ONLY, with higher confidence and a clearer/longer Japanese summary.\n" if is_summary_task else "). Produce better JSON ONLY, with higher confidence and more complete pseudocode.\n")
             )
         else:
             raise RuntimeError(f"guardrail failed after {max_attempts} attempts: {last_invalid}")
@@ -940,86 +1146,192 @@ def process_request(s: Settings, req: dict) -> None:
         if isinstance(needs, bool):
             needs = [] if needs is False else ["needs_review flagged"]
 
-        payload = {
-            "function_id": fid,
-            "status": "ok",
-            "provider": provider,
-            "model": model,
-            "prompt_version": "v2",
-            "analysis_hash": ah,
-            "context_summary": ctx_summary,
-            "pseudocode": (result or {}).get("pseudocode"),
-            "proposed_name": (result or {}).get("proposed_name"),
-            "signature": (result or {}).get("signature"),
-            "key_points": (result or {}).get("key_points", []) or [],
-            "iocs": (result or {}).get("iocs", []) or [],
-            "needs_review": needs or [],
-            "confidence": float((result or {}).get("confidence", 0.5)),
-            "queued_at": req.get("enqueued_at"),
-            "started_at": datetime.fromtimestamp(t_start, tz=_JST).isoformat(),
-            "finished_at": datetime.fromtimestamp(t_done, tz=_JST).isoformat(),
-            "total_ms": int((t_done - t_start) * 1000),
-            "api_ms": api_ms,
-            "usage": ((result or {}).get("usage") if isinstance((result or {}).get("usage"), dict) else None),
-            "updated_at": _now_jst_iso(),
-        }
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write(out_path, payload)
-
-        _update_index(
-            idx_path,
-            fid,
-            {
-                "status": "ok",
-                "updated_at": payload["updated_at"],
-                "confidence": payload.get("confidence"),
-                "proposed_name": payload.get("proposed_name"),
-                "model": payload.get("model"),
-                "queued_at": payload.get("queued_at"),
-                "started_at": payload.get("started_at"),
-                "finished_at": payload.get("finished_at"),
-                "total_ms": payload.get("total_ms"),
-                "api_ms": payload.get("api_ms"),
-            },
-        )
-
-        _append_log(
-            base,
-            {
-                "ts": _now_jst_iso(),
-                "job_id": job_id,
+        if is_summary_task:
+            payload = {
                 "function_id": fid,
-                "event": "decompile_finished",
-                "model": model,
                 "status": "ok",
-                "total_ms": payload.get("total_ms"),
-                "api_ms": payload.get("api_ms"),
-                "usage": payload.get("usage"),
-            },
-        )
+                "provider": provider,
+                "model": model,
+                "prompt_version": "summary_v1",
+                "analysis_hash": ah,
+                "context_summary": ctx_summary,
+                "summary_ja": (result or {}).get("summary_ja"),
+                "confidence": float((result or {}).get("confidence", 0.5)),
+                "queued_at": req.get("enqueued_at"),
+                "started_at": datetime.fromtimestamp(t_start, tz=_JST).isoformat(),
+                "finished_at": datetime.fromtimestamp(t_done, tz=_JST).isoformat(),
+                "total_ms": int((t_done - t_start) * 1000),
+                "api_ms": api_ms,
+                "usage": ((result or {}).get("usage") if isinstance((result or {}).get("usage"), dict) else None),
+                "updated_at": _now_jst_iso(),
+            }
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write(out_path, payload)
+
+            # Also persist to dedicated summary store (same content, stable path)
+            try:
+                _write_function_summary(
+                    base,
+                    fid,
+                    str(payload.get("summary_ja") or ""),
+                    float(payload.get("confidence") or 0.0),
+                    source="summarize",
+                    model=model,
+                    provider=provider,
+                )
+            except Exception:
+                pass
+
+            _update_index(
+                idx_path,
+                fid,
+                {
+                    "summary_status": "ok",
+                    "summary_updated_at": payload["updated_at"],
+                    "summary_confidence": payload.get("confidence"),
+                    "summary_model": payload.get("model"),
+                    "summary_queued_at": payload.get("queued_at"),
+                    "summary_started_at": payload.get("started_at"),
+                    "summary_finished_at": payload.get("finished_at"),
+                    "summary_total_ms": payload.get("total_ms"),
+                    "summary_api_ms": payload.get("api_ms"),
+                },
+            )
+
+            _append_log(
+                base,
+                {
+                    "ts": _now_jst_iso(),
+                    "job_id": job_id,
+                    "function_id": fid,
+                    "event": "summary_finished",
+                    "model": model,
+                    "status": "ok",
+                    "total_ms": payload.get("total_ms"),
+                    "api_ms": payload.get("api_ms"),
+                    "usage": payload.get("usage"),
+                },
+            )
+        else:
+            payload = {
+                "function_id": fid,
+                "status": "ok",
+                "provider": provider,
+                "model": model,
+                "prompt_version": "v2",
+                "analysis_hash": ah,
+                "context_summary": ctx_summary,
+                "pseudocode": (result or {}).get("pseudocode"),
+                "proposed_name": (result or {}).get("proposed_name"),
+                "signature": (result or {}).get("signature"),
+                "summary_ja": (result or {}).get("summary_ja"),
+                "key_points": (result or {}).get("key_points", []) or [],
+                "iocs": (result or {}).get("iocs", []) or [],
+                "needs_review": needs or [],
+                "confidence": float((result or {}).get("confidence", 0.5)),
+                "queued_at": req.get("enqueued_at"),
+                "started_at": datetime.fromtimestamp(t_start, tz=_JST).isoformat(),
+                "finished_at": datetime.fromtimestamp(t_done, tz=_JST).isoformat(),
+                "total_ms": int((t_done - t_start) * 1000),
+                "api_ms": api_ms,
+                "usage": ((result or {}).get("usage") if isinstance((result or {}).get("usage"), dict) else None),
+                "updated_at": _now_jst_iso(),
+            }
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write(out_path, payload)
+
+            # Persist per-function summary for later EXE aggregation
+            try:
+                if isinstance(payload.get("summary_ja"), str) and str(payload.get("summary_ja") or "").strip():
+                    _write_function_summary(
+                        base,
+                        fid,
+                        str(payload.get("summary_ja") or ""),
+                        float(payload.get("confidence") or 0.0),
+                        source="decompile",
+                        model=model,
+                        provider=provider,
+                    )
+            except Exception:
+                pass
+
+            _update_index(
+                idx_path,
+                fid,
+                {
+                    "status": "ok",
+                    "updated_at": payload["updated_at"],
+                    "confidence": payload.get("confidence"),
+                    "proposed_name": payload.get("proposed_name"),
+                    "model": payload.get("model"),
+                    "queued_at": payload.get("queued_at"),
+                    "started_at": payload.get("started_at"),
+                    "finished_at": payload.get("finished_at"),
+                    "total_ms": payload.get("total_ms"),
+                    "api_ms": payload.get("api_ms"),
+                },
+            )
+
+            _append_log(
+                base,
+                {
+                    "ts": _now_jst_iso(),
+                    "job_id": job_id,
+                    "function_id": fid,
+                    "event": "decompile_finished",
+                    "model": model,
+                    "status": "ok",
+                    "total_ms": payload.get("total_ms"),
+                    "api_ms": payload.get("api_ms"),
+                    "usage": payload.get("usage"),
+                },
+            )
 
     except Exception as e:
-        _update_index(
-            idx_path,
-            fid,
-            {
-                "status": "error",
-                "error": str(e),
-                "finished_at": _now_jst_iso(),
-            },
-        )
-        _append_log(
-            base,
-            {
-                "ts": _now_jst_iso(),
-                "job_id": job_id,
-                "function_id": fid,
-                "event": "decompile_finished",
-                "model": model,
-                "status": "error",
-                "error": str(e),
-            },
-        )
+        if is_summary_task:
+            _update_index(
+                idx_path,
+                fid,
+                {
+                    "summary_status": "error",
+                    "summary_error": str(e),
+                    "summary_finished_at": _now_jst_iso(),
+                },
+            )
+            _append_log(
+                base,
+                {
+                    "ts": _now_jst_iso(),
+                    "job_id": job_id,
+                    "function_id": fid,
+                    "event": "summary_finished",
+                    "model": model,
+                    "status": "error",
+                    "error": str(e),
+                },
+            )
+        else:
+            _update_index(
+                idx_path,
+                fid,
+                {
+                    "status": "error",
+                    "error": str(e),
+                    "finished_at": _now_jst_iso(),
+                },
+            )
+            _append_log(
+                base,
+                {
+                    "ts": _now_jst_iso(),
+                    "job_id": job_id,
+                    "function_id": fid,
+                    "event": "decompile_finished",
+                    "model": model,
+                    "status": "error",
+                    "error": str(e),
+                },
+            )
     finally:
         try:
             os.unlink(lock_path)

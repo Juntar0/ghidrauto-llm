@@ -563,6 +563,9 @@ export default function App() {
   const [disasm, setDisasm] = useState<string>('')
   const [ghidraDecomp, setGhidraDecomp] = useState<string>('')
   const [ai, setAi] = useState<AiResult | null>(null)
+  const [funcSummary, setFuncSummary] = useState<any>(null)
+  const [showExeSummary, setShowExeSummary] = useState<boolean>(false)
+  const [_exeSummary, setExeSummary] = useState<any>(null)
   const [capaData, setCapaData] = useState<any>(null)
   const [mainGuess, setMainGuess] = useState<{ function_id: string; reason?: string } | null>(null)
   const [mainGuessError, setMainGuessError] = useState<string | null>(null)
@@ -958,6 +961,30 @@ export default function App() {
     return data
   }
 
+  async function loadFuncSummary(id: string, fid: string) {
+    try {
+      const r = await fetch(`${apiBase}/api/jobs/${id}/functions/${fid}/summary`)
+      const j = await r.json().catch(() => null)
+      setFuncSummary(j)
+      return j
+    } catch {
+      setFuncSummary(null)
+      return null
+    }
+  }
+
+  async function loadExeSummary(id: string) {
+    try {
+      const r = await fetch(`${apiBase}/api/jobs/${id}/exe_summary`)
+      const j = await r.json().catch(() => null)
+      setExeSummary(j)
+      return j
+    } catch {
+      setExeSummary(null)
+      return null
+    }
+  }
+
   async function loadGhidraDecomp(id: string, fid: string) {
     try {
       const r = await fetch(`${apiBase}/api/jobs/${id}/functions/${fid}/ghidra`)
@@ -1181,6 +1208,7 @@ export default function App() {
     ;(async () => {
       await loadDisasm(jobId, selected)
       await loadGhidraDecomp(jobId, selected)
+      await loadFuncSummary(jobId, selected)
       const st = await loadAi(jobId, selected)
       if (autoRunOnSelect && st.status === 'not_started') {
         await requestDecompile(jobId, selected)
@@ -1196,6 +1224,7 @@ export default function App() {
     if (!st) return
     if (st.status === 'ok' || st.status === 'error') {
       loadAi(jobId, selected)
+      loadFuncSummary(jobId, selected)
     } else {
       setAi((prev) => (prev ? { ...prev, status: st.status ?? prev.status } : prev))
     }
@@ -1995,18 +2024,60 @@ export default function App() {
               </button>
             ) : null}
             {selected && (
-              <button
-                className='smallBtn'
-                onClick={async () => {
-                  // optimistic UI
-                  setAi({ function_id: selected, status: 'queued' })
-                  setIndex((prev) => ({ ...prev, [selected]: { ...(prev[selected] || {}), status: 'queued' } }))
-                  await requestDecompile(jobId, selected, { force: true })
-                }}
-                disabled={ai?.status === 'queued' || ai?.status === 'running'}
-              >
-                Run / Re-run
-              </button>
+              <>
+                <button
+                  className='smallBtn'
+                  onClick={async () => {
+                    // optimistic UI
+                    setAi({ function_id: selected, status: 'queued' })
+                    setIndex((prev) => ({ ...prev, [selected]: { ...(prev[selected] || {}), status: 'queued' } }))
+                    await requestDecompile(jobId, selected, { force: true })
+                  }}
+                  disabled={ai?.status === 'queued' || ai?.status === 'running'}
+                >
+                  Run / Re-run
+                </button>
+
+                <button
+                  className='smallBtn'
+                  onClick={async () => {
+                    if (!jobId || !selected) return
+                    const fd = new FormData()
+                    if (providerChoice) fd.set('provider', providerChoice)
+
+                    const effectiveModel =
+                      modelChoice || (providerChoice === 'openai' ? openaiDefaultModel : anthropicDefaultModel) || ''
+                    if (effectiveModel) fd.set('model', effectiveModel)
+
+                    if (providerChoice === 'openai') {
+                      if (openaiBaseUrl.trim()) fd.set('openai_base_url', openaiBaseUrl.trim())
+                      if (openaiApiKey.trim()) fd.set('openai_api_key', openaiApiKey.trim())
+                      if (openaiApiMode.trim()) fd.set('openai_api_mode', openaiApiMode.trim())
+                      if (openaiReasoning.trim()) fd.set('openai_reasoning', openaiReasoning.trim())
+                    }
+
+                    await fetch(`${apiBase}/api/jobs/${jobId}/functions/${selected}/summarize`, { method: 'POST', body: fd })
+                    // refresh
+                    window.setTimeout(() => loadFuncSummary(jobId, selected), 600)
+                  }}
+                  disabled={!jobId || !selected}
+                  title='Generate/update summary_ja for the selected function'
+                >
+                  Summarize
+                </button>
+
+                <button
+                  className={`smallBtn ${showExeSummary ? 'smallBtnActive' : ''}`}
+                  onClick={() => {
+                    setShowExeSummary((v) => !v)
+                    if (jobId) loadExeSummary(jobId)
+                  }}
+                  disabled={!jobId}
+                  title='Show / update EXE-level summary'
+                >
+                  EXE Summary
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -2292,7 +2363,7 @@ export default function App() {
                     <div className='pseudoSig'>{ai.signature ?? ''}</div>
                   </div>
 
-                  {(ai as any).summary_ja ? (
+                  {(((ai as any).summary_ja as any) || (funcSummary as any)?.summary_ja) ? (
                     <div style={{ 
                       padding: '12px 16px',
                       background: 'rgba(255, 215, 0, 0.08)',
@@ -2310,7 +2381,7 @@ export default function App() {
                         📝 概要
                       </div>
                       <div style={{ color: 'rgba(255,255,255,0.85)' }}>
-                        {(ai as any).summary_ja}
+                        {(ai as any).summary_ja || (funcSummary as any)?.summary_ja}
                       </div>
                     </div>
                   ) : null}
