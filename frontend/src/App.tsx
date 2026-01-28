@@ -720,7 +720,7 @@ export default function App() {
   const [lastDecompileFid, setLastDecompileFid] = useState<string | null>(null)
   
   const [calledRanking, setCalledRanking] = useState<any[]>([])
-  const [showRanking, setShowRanking] = useLocalStorageState<boolean>('autore.showRanking', false)
+  const [showRanking, setShowRanking] = useState<boolean>(false)
   const [showCallTree, setShowCallTree] = useLocalStorageState<boolean>('autore.showCallTree', false)
   const [showCapaModal, setShowCapaModal] = useState<boolean>(false)
   const [showXrefs, setShowXrefs] = useState<boolean>(false)
@@ -2169,8 +2169,8 @@ export default function App() {
             <button
               className={`smallBtn ${showRanking ? 'smallBtnActive' : ''}`}
               onClick={() => {
-                setShowRanking(!showRanking)
-                if (!showRanking) loadCalledRanking()
+                setShowRanking(true)
+                loadCalledRanking()
               }}
               title='Show most-called functions'
             >
@@ -2615,47 +2615,7 @@ export default function App() {
                 </details>
               ) : null}
               
-              {showRanking ? (
-                <details className='fold' open>
-                  <summary className='foldSummary'>Most Called Functions ({calledRanking.length})</summary>
-                  <div className='foldBody'>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                      <button className='smallBtn' onClick={loadCalledRanking}>
-                        Refresh
-                      </button>
-                    </div>
-                    {calledRanking.length ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {calledRanking.slice(0, 30).map((item, i) => (
-                          <div
-                            key={item.function_id}
-                            className='fnItem'
-                            onClick={() => {
-                              navigateTo(item.function_id)
-                              if (isMobile) setMobileTab('disasm')
-                            }}
-                            style={{ cursor: 'pointer' }}
-                          >
-                            <div className='fnMeta'>
-                              <div className='fnName'>
-                                #{i + 1} {displayName(item.function_id) || item.name || item.function_id}
-                              </div>
-                              <div className='fnSub'>
-                                <span>{item.call_count} calls</span>
-                                <span>{item.entry ? `@ ${item.entry}` : ''}</span>
-                                <span>{item.size ? `${item.size} bytes` : ''}</span>
-                              </div>
-                            </div>
-                            <span className='badge'>{item.call_count}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className='secondary'>No call data available.</div>
-                    )}
-                  </div>
-                </details>
-              ) : null}
+              
 
               {/* Function summary (always visible if available; independent from AI decompile status) */}
               {selected && ((funcSummary as any)?.summary_ja || (ai as any)?.summary_ja) ? (
@@ -2790,6 +2750,97 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Ranking Modal */}
+      {!isMobile && showRanking ? (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            zIndex: 1075,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={() => setShowRanking(false)}
+        >
+          <div
+            style={{
+              background: '#1a1a1a',
+              borderRadius: 12,
+              maxWidth: '85vw',
+              width: '100%',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18 }}>Most Called Functions ({calledRanking.length})</h3>
+                <div className='secondary' style={{ marginTop: 4, fontSize: 12 }}>click a row to jump</div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <button className='smallBtn' onClick={loadCalledRanking} disabled={!jobId}>
+                  Refresh
+                </button>
+                <button className='smallBtn' onClick={() => setShowRanking(false)} style={{ fontSize: 20, padding: '4px 12px' }}>
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: 10, overflow: 'auto' }}>
+              {calledRanking.length ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {calledRanking.slice(0, 200).map((item, i) => (
+                    <div
+                      key={item.function_id}
+                      className='fnItem'
+                      onClick={() => {
+                        navigateTo(item.function_id)
+                        if (isMobile) setMobileTab('disasm')
+                        setShowRanking(false)
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <div className='fnMeta'>
+                        <div className='fnName'>
+                          #{i + 1} {displayName(item.function_id) || item.name || item.function_id}
+                        </div>
+                        <div className='fnSub'>
+                          <span>{item.call_count} calls</span>
+                          <span>{item.entry ? `@ ${item.entry}` : ''}</span>
+                          <span>{item.size ? `${item.size} bytes` : ''}</span>
+                        </div>
+                      </div>
+                      <span className='badge'>{item.call_count}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className='secondary' style={{ padding: 20 }}>No call data available.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* CAPA Modal */}
       {showCapaModal ? (
