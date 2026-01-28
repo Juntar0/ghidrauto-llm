@@ -209,11 +209,10 @@
   border-bottom: 1px solid var(--border);
   background: rgba(0,0,0,0.18);
   padding: 10px 12px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  flex-wrap: nowrap;
 }
 
 .topbarLeft {
@@ -221,7 +220,6 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-  flex: 1 1 auto;
 }
 
 .topbarTitle {
@@ -238,21 +236,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 0 1 auto;
   justify-content: flex-end;
   min-width: 0;
-  overflow-x: auto;
-  max-width: 60vw;
-  flex-wrap: nowrap;
-}
-
-.topbarRight::-webkit-scrollbar {
-  height: 6px;
-}
-
-.topbarRight::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.18);
-  border-radius: 999px;
+  flex-wrap: wrap;
 }
 
 .panes {
