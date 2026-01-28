@@ -2655,22 +2655,17 @@ export default function App() {
 
               {/* Function summary (always visible if available; independent from AI decompile status) */}
               {selected && ((funcSummary as any)?.summary_ja || (ai as any)?.summary_ja) ? (
-                <div
-                  style={{
-                    padding: '12px 16px',
-                    background: 'rgba(255, 215, 0, 0.08)',
-                    border: '1px solid rgba(255, 215, 0, 0.2)',
-                    borderRadius: '10px',
-                    marginBottom: '12px',
-                    lineHeight: '1.6',
-                  }}
-                >
-                  <div
+                <details className='fold' open style={{ marginBottom: '12px' }}>
+                  <summary
+                    className='foldSummary'
                     style={{
+                      padding: '8px 12px',
+                      background: 'rgba(255, 215, 0, 0.08)',
+                      border: '1px solid rgba(255, 215, 0, 0.2)',
+                      borderRadius: '10px',
                       fontSize: '12px',
                       fontWeight: 600,
                       color: 'rgba(255, 215, 0, 0.9)',
-                      marginBottom: '6px',
                       display: 'flex',
                       justifyContent: 'space-between',
                       gap: 10,
@@ -2681,11 +2676,23 @@ export default function App() {
                     <span className='secondary' style={{ fontSize: 11 }}>
                       {(ai as any)?.summary_ja ? 'source: decompile' : 'source: summarize'}
                     </span>
-                  </div>
-                  <div style={{ color: 'rgba(255,255,255,0.85)', whiteSpace: 'pre-wrap' }}>
+                  </summary>
+                  <div
+                    className='foldBody'
+                    style={{
+                      padding: '12px 16px',
+                      background: 'rgba(255, 215, 0, 0.08)',
+                      border: '1px solid rgba(255, 215, 0, 0.2)',
+                      borderTop: 'none',
+                      borderRadius: '0 0 10px 10px',
+                      lineHeight: '1.6',
+                      color: 'rgba(255,255,255,0.85)',
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
                     {(ai as any)?.summary_ja || (funcSummary as any)?.summary_ja}
                   </div>
-                </div>
+                </details>
               ) : null}
 
               {ai?.status === 'ok' ? (
