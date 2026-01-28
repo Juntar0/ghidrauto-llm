@@ -2523,12 +2523,41 @@ export default function App() {
                               {ruleData.matches.slice(0, 10).map((match: any, idx: number) => {
                                 // CAPA match format: [[{type, value}, {...}], ...]
                                 const firstLoc = match && match[0];
-                                const addr = firstLoc?.type === 'absolute' && firstLoc?.value 
-                                  ? `0x${firstLoc.value.toString(16).toUpperCase()}`
+                                const addrValue = firstLoc?.type === 'absolute' && firstLoc?.value ? firstLoc.value : null;
+                                const addr = addrValue 
+                                  ? `0x${addrValue.toString(16).toUpperCase()}`
                                   : (firstLoc?.type === 'no address' ? '(file-level)' : 'N/A');
+                                
+                                // Convert address to function ID (e.g., 0x401234 -> FUN_00401234)
+                                const functionId = addrValue 
+                                  ? `FUN_${addrValue.toString(16).toUpperCase().padStart(8, '0')}`
+                                  : null;
+                                
                                 return (
                                   <div key={idx} style={{ fontSize: '12px', fontFamily: 'monospace', marginBottom: 4 }}>
-                                    • {addr}
+                                    • {functionId ? (
+                                      <button
+                                        className='smallBtn'
+                                        style={{ 
+                                          padding: '2px 6px', 
+                                          fontSize: '12px',
+                                          fontFamily: 'monospace',
+                                          cursor: 'pointer'
+                                        }}
+                                        onClick={() => {
+                                          navigateTo(functionId);
+                                          if (isMobile) {
+                                            setMobileSidebarOpen(false);
+                                            setMobileTab('disasm');
+                                          }
+                                        }}
+                                        title={`Jump to ${functionId}`}
+                                      >
+                                        {addr}
+                                      </button>
+                                    ) : (
+                                      <span>{addr}</span>
+                                    )}
                                   </div>
                                 );
                               })}
