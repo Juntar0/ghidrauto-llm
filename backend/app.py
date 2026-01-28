@@ -233,13 +233,48 @@ async def get_analysis(job_id: str):
 
 @app.get("/api/jobs/{job_id}/capa")
 async def get_capa(job_id: str):
-    """Get CAPA malware capability detection results."""
+    """Get CAPA malware capability detection results.
+
+    CAPA sometimes emits warnings or non-JSON text; also capa.json may be empty if the run failed.
+    This endpoint is tolerant and will return a structured error instead of 500.
+    """
     capa_path = Path(settings.work_dir) / job_id / "extract" / "capa.json"
     if not capa_path.exists():
         raise HTTPException(404, "CAPA results not found")
-    
-    data = read_json(capa_path, {})
-    return JSONResponse(data)
+
+    raw = capa_path.read_text(encoding="utf-8", errors="replace")
+    if not raw.strip():
+        return JSONResponse(
+            {
+                "error": "capa.json is empty",
+                "hint": "Re-run re-extract to regenerate CAPA output. Check extract/capa.log for details.",
+            },
+            status_code=200,
+        )
+
+    # Try strict JSON parse first
+    try:
+        return JSONResponse(json.loads(raw))
+    except Exception:
+        pass
+
+    # Try to recover JSON by locating the first '{'
+    try:
+        i = raw.find("{")
+        if i >= 0:
+            return JSONResponse(json.loads(raw[i:]))
+    except Exception:
+        pass
+
+    # Fallback: return error + a preview for debugging
+    return JSONResponse(
+        {
+            "error": "capa.json is not valid JSON",
+            "preview": raw[:300],
+            "hint": "Check extract/capa.log for the CAPA stderr output.",
+        },
+        status_code=200,
+    )
 
 
 @app.delete("/api/jobs/{job_id}")

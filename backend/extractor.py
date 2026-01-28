@@ -130,6 +130,28 @@ def run_capa_analysis(
     except Exception as e:
         capa_json.write_text(json.dumps({"error": str(e)}))
     
-    # Verify output exists
-    if not capa_json.exists():
-        capa_json.write_text(json.dumps({"error": "capa.json not created"}))
+    # Verify output exists and looks non-empty
+    try:
+        if not capa_json.exists():
+            capa_json.write_text(json.dumps({"error": "capa.json not created"}))
+            return
+        if capa_json.stat().st_size == 0:
+            # If CAPA produced nothing on stdout, provide a helpful error.
+            err_preview = ""
+            try:
+                if log_path.exists():
+                    err_preview = log_path.read_text(encoding="utf-8", errors="replace")[:300]
+            except Exception:
+                err_preview = ""
+            capa_json.write_text(
+                json.dumps(
+                    {
+                        "error": "capa produced empty output",
+                        "hint": "See extract/capa.log for details",
+                        "log_preview": err_preview,
+                    }
+                )
+            )
+    except Exception:
+        # Never fail the extract pipeline due to CAPA validation
+        pass
