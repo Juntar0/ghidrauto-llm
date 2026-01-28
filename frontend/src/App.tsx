@@ -2203,7 +2203,24 @@ export default function App() {
 
             <button
               className={`smallBtn ${showCapaModal ? 'smallBtnActive' : ''}`}
-              onClick={() => setShowCapaModal(!showCapaModal)}
+              onClick={async () => {
+                if (!jobId) return
+                try {
+                  const st = await fetch(`${apiBase}/api/tools/capa/status`).then((r) => r.json())
+                  if (!st?.installed) {
+                    // Best-effort install
+                    const res = await fetch(`${apiBase}/api/tools/capa/install`, { method: 'POST' }).then((r) => r.json())
+                    if (!res?.installed) {
+                      alert(`CAPA is not installed.\n\nInstaller output:\n${res?.output || res?.error || 'unknown error'}`)
+                      return
+                    }
+                    alert('CAPA installed. Please Re-extract the current job to generate capa.json.')
+                  }
+                  setShowCapaModal(true)
+                } catch (e: any) {
+                  alert(`CAPA check/install failed: ${String(e?.message || e)}`)
+                }
+              }}
               disabled={!jobId}
               title='Show CAPA malware capability detection results'
             >

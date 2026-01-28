@@ -19,6 +19,9 @@ from sse_starlette.sse import EventSourceResponse
 
 from .config import load_settings
 from .extractor import run_capa_analysis, run_ghidra_extract
+
+import shutil
+import subprocess
 from .pecheck import looks_like_pe
 from .storage import (
     ensure_job_dirs,
@@ -837,6 +840,52 @@ async def debug_settings():
         "bind_host": settings.bind_host,
         "bind_port": settings.bind_port,
     }
+
+
+@app.get("/api/tools/capa/status")
+async def capa_status():
+    """Return whether capa is installed and its version (if available)."""
+
+    p = shutil.which("capa")
+    if not p:
+        return {"installed": False, "path": None}
+
+    ver = None
+    try:
+        r = subprocess.run([p, "--version"], capture_output=True, text=True, timeout=5)
+        if r.stdout:
+            ver = r.stdout.strip().splitlines()[0]
+        elif r.stderr:
+            ver = r.stderr.strip().splitlines()[0]
+    except Exception:
+        ver = None
+
+    return {"installed": True, "path": p, "version": ver}
+
+
+@app.post("/api/tools/capa/install")
+async def capa_install():
+    """Install capa on the host (best-effort)."""
+
+    # If already installed, just return status
+    p = shutil.which("capa")
+    if p:
+        return {"ok": True, "installed": True, "path": p}
+
+    script = Path(__file__).resolve().parents[1] / "install_capa.sh"
+    if not script.exists():
+        raise HTTPException(500, "install_capa.sh not found")
+
+    try:
+        r = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=300)
+        out = (r.stdout or "") + ("\n" + r.stderr if r.stderr else "")
+        ok = r.returncode == 0
+        p2 = shutil.which("capa")
+        return {"ok": ok, "installed": bool(p2), "path": p2, "output": out[-4000:]}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "installed": False, "error": "install timeout"}
+    except Exception as e:
+        return {"ok": False, "installed": False, "error": str(e)}
 
 
 @app.get("/api/jobs/{job_id}/debug/function/{function_id}")
