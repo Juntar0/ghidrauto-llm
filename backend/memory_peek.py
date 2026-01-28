@@ -41,29 +41,22 @@ def memory_view(job_id: str, addr: str, length: int) -> dict[str, Any]:
     if cached is not None:
         return cached
 
-    # Determine program name (imported file name) from input dir.
-    inp = paths["input"]
-    files = [p for p in inp.iterdir() if p.is_file()]
-    if not files:
-        raise FileNotFoundError("no input file for job")
-    sample = sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)[0]
-    program_name = sample.name
-
-    # Use existing project created by extract if present.
+    # Use existing project created by extract.
     project_root = paths["base"] / "ghidra_project"
-    project_root.mkdir(parents=True, exist_ok=True)
+    if not project_root.exists():
+        raise FileNotFoundError("ghidra project not found; run extract first")
     project_name = "proj"
 
     out_json = paths["extract"] / f"mem_{va:016x}_{ln}.json"
     log_path = paths["extract"] / "peekmem.log"
 
+    # Don't specify -process: let Ghidra pick the single program in the project.
+    # -noanalysis skips heavy re-analysis; script just reads memory.
     cmd = [
         settings.ghidra_analyze_headless,
         str(project_root),
         project_name,
         "-noanalysis",
-        "-process",
-        program_name,
         "-scriptPath",
         settings.ghidra_scripts_dir,
         "-postScript",
@@ -80,10 +73,24 @@ def memory_view(job_id: str, addr: str, length: int) -> dict[str, Any]:
     with open(log_path, "a", encoding="utf-8", errors="replace") as log:
         subprocess.run(cmd, check=True, env=env, timeout=120, stdout=log, stderr=subprocess.STDOUT)
 
+    if not out_json.exists():
+        # Read log tail for a useful error message
+        log_tail = ""
+        try:
+            log_tail = log_path.read_text(encoding="utf-8", errors="replace")[-800:]
+        except Exception:
+            pass
+        raise RuntimeError(f"PeekMemory did not produce output. log tail:\n{log_tail}")
+
     obj = read_json(out_json, {})
     # Basic shape validation
     if not isinstance(obj, dict) or "bytes_b64" not in obj:
-        raise RuntimeError("peek memory failed; see extract/peekmem.log")
+        log_tail = ""
+        try:
+            log_tail = log_path.read_text(encoding="utf-8", errors="replace")[-800:]
+        except Exception:
+            pass
+        raise RuntimeError(f"peek memory failed (bad output). log tail:\n{log_tail}")
 
     # Ensure bytes_b64 is valid base64 (defensive)
     try:
