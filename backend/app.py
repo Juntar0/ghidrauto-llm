@@ -484,12 +484,37 @@ async def guess_main(job_id: str):
     return JSONResponse(_guess_main_function_id(job_id))
 
 
+# Small in-memory file cache to avoid slow filesystem reads on rapid navigation.
+# Keyed by (path, mtime_ns, size).
+_FILE_CACHE: dict[tuple[str, int, int], bytes] = {}
+_FILE_CACHE_MAX = 256
+
+
+def _read_file_cached(path: Path) -> bytes:
+    st = path.stat()
+    key = (str(path), int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))), int(st.st_size))
+    b = _FILE_CACHE.get(key)
+    if b is not None:
+        return b
+    data = path.read_bytes()
+    _FILE_CACHE[key] = data
+    # best-effort prune
+    if len(_FILE_CACHE) > _FILE_CACHE_MAX:
+        try:
+            for k in list(_FILE_CACHE.keys())[: len(_FILE_CACHE) - _FILE_CACHE_MAX]:
+                _FILE_CACHE.pop(k, None)
+        except Exception:
+            pass
+    return data
+
+
 @app.get("/api/jobs/{job_id}/functions/{function_id}/disasm")
 async def get_disasm(job_id: str, function_id: str):
     p = Path(settings.work_dir) / job_id / "extract" / "disasm" / f"{function_id}.txt"
     if not p.exists():
         raise HTTPException(404, "disasm not found")
-    return FileResponse(p)
+    data = _read_file_cached(p)
+    return Response(content=data, media_type="text/plain; charset=utf-8")
 
 
 @app.get("/api/jobs/{job_id}/functions/{function_id}/ghidra")
@@ -497,7 +522,8 @@ async def get_ghidra_decompile(job_id: str, function_id: str):
     p = Path(settings.work_dir) / job_id / "extract" / "decomp" / f"{function_id}.c"
     if not p.exists():
         raise HTTPException(404, "ghidra decompile not found")
-    return FileResponse(p)
+    data = _read_file_cached(p)
+    return Response(content=data, media_type="text/plain; charset=utf-8")
 
 
 @app.get("/api/jobs/{job_id}/functions/{function_id}")
