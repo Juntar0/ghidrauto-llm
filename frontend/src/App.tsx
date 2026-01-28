@@ -21,6 +21,39 @@ import 'highlight.js/styles/github-dark.css'
 hljs.registerLanguage('cpp', cpp)
 hljs.registerLanguage('x86asm', x86asm)
 
+// Add clickable function links to highlighted HTML
+function addFunctionLinks(
+  html: string,
+  entryAddrToId: Map<string, string>,
+  _nameToId: Map<string, string>,
+  _onNavigate: (fid: string) => void
+): string {
+  // Replace function name patterns with clickable spans
+  let result = html
+  
+  // Pattern 1: FUN_00401000, thunk_FUN_00401000
+  result = result.replace(/\b((?:FUN_|thunk_FUN_)([0-9A-Fa-f]+))\b/g, (match, _fullName, addr) => {
+    const lowerAddr = addr.toLowerCase()
+    const fid = entryAddrToId.get(lowerAddr) || entryAddrToId.get(`0x${lowerAddr}`)
+    if (fid) {
+      return `<span class="codeLink" data-fid="${fid}">${match}</span>`
+    }
+    return match
+  })
+  
+  // Pattern 2: sub_00401000, function_00401000
+  result = result.replace(/\b((?:sub|function)_([0-9A-Fa-f]+))\b/g, (match, _fullName, addr) => {
+    const lowerAddr = addr.toLowerCase()
+    const fid = entryAddrToId.get(lowerAddr) || entryAddrToId.get(`0x${lowerAddr}`)
+    if (fid) {
+      return `<span class="codeLink" data-fid="${fid}">${match}</span>`
+    }
+    return match
+  })
+  
+  return result
+}
+
 type Analysis = {
   sample?: { entry_point?: string; image_base?: string; path?: string }
   ui?: { default_function_id?: string }
@@ -1786,7 +1819,22 @@ export default function App() {
               <div
                 className='pseudoCodeContent'
                 dangerouslySetInnerHTML={{
-                  __html: hljs.highlight(line, { language: 'cpp' }).value
+                  __html: addFunctionLinks(
+                    hljs.highlight(line, { language: 'cpp' }).value,
+                    entryAddrToId,
+                    nameToId,
+                    navigateTo
+                  )
+                }}
+                onClick={(e) => {
+                  const target = e.target as HTMLElement
+                  if (target.classList.contains('codeLink')) {
+                    const fid = target.getAttribute('data-fid')
+                    if (fid) {
+                      navigateTo(fid, { from: selected ?? undefined, recordEdge: true })
+                      if (isMobile) setMobileTab('disasm')
+                    }
+                  }
                 }}
               />
             </div>
@@ -2406,7 +2454,22 @@ export default function App() {
                         <div
                           className='ghidraContent'
                           dangerouslySetInnerHTML={{
-                            __html: hljs.highlight(r.text, { language: 'cpp' }).value
+                            __html: addFunctionLinks(
+                              hljs.highlight(r.text, { language: 'cpp' }).value,
+                              entryAddrToId,
+                              nameToId,
+                              navigateTo
+                            )
+                          }}
+                          onClick={(e) => {
+                            const target = e.target as HTMLElement
+                            if (target.classList.contains('codeLink')) {
+                              const fid = target.getAttribute('data-fid')
+                              if (fid) {
+                                navigateTo(fid, { from: selected ?? undefined, recordEdge: true })
+                                if (isMobile) setMobileTab('disasm')
+                              }
+                            }
                           }}
                         />
                       </div>
