@@ -690,9 +690,9 @@ export default function App() {
   const nameToId = useMemo(() => {
     const m = new Map<string, string>()
     for (const f of functions) {
-      if (f.name && f.name !== f.id) {
-        m.set(f.name.toLowerCase(), f.id)
-      }
+      if (f.name) m.set(String(f.name).toLowerCase(), f.id)
+      // also map id itself (helps with names like "entry")
+      if (f.id) m.set(String(f.id).toLowerCase(), f.id)
     }
     return m
   }, [functions])
@@ -1325,7 +1325,7 @@ export default function App() {
             if (isMobile) setMobileTab('disasm')
           }}
         >
-          {match.text}
+          {displayName(match.fid) || match.text}
         </span>,
       )
       pos = match.end
@@ -1535,7 +1535,7 @@ export default function App() {
               if (isMobile) setMobileTab('disasm')
             }}
           >
-            {match.text}
+            {displayName(match.fid) || match.text}
           </span>,
         )
         pos = match.end
@@ -2092,7 +2092,7 @@ export default function App() {
           <section className='pane' style={isMobile && mobileTab !== 'ghidra' ? { display: 'none' } : undefined}>
             <div className='paneHeader'>
               <h4>Ghidra</h4>
-              <span className='sub'>{selected ?? ''}</span>
+              <span className='sub'>{displayName(selected) || ''}</span>
             </div>
             <div className='paneBody'>
               {ghidraDecomp ? (
