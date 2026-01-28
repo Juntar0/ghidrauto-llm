@@ -1599,7 +1599,7 @@ export default function App() {
     if (disasmCollapsed) {
       // Save previous split and collapse to a thin strip
       if (splitA > 0.08) setDisasmSplitPrev(splitA)
-      if (splitA !== 0.05) setSplitA(0.05)
+      if (splitA !== 0.01) setSplitA(0.01)
     } else {
       // Restore previous split if it was collapsed
       if (splitA < 0.08) setSplitA(disasmSplitPrev || 0.33)
