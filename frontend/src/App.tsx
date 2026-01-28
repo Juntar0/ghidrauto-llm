@@ -33,7 +33,7 @@ function escapeHtml(s: string) {
 const LINK_TOKEN_BEGIN = '__CLAWD_LINK_BEGIN__'
 const LINK_TOKEN_END = '__CLAWD_LINK_END__'
 
-function injectLinkTokens(line: string, entryAddrToId: Map<string, string>) {
+function injectLinkTokens(line: string, entryAddrToId: Map<string, string>, nameToId: Map<string, string>) {
   // Replace common function reference patterns with stable tokens that survive highlight.js.
   // We'll swap these tokens back to clickable <span> after highlighting.
   let out = line
@@ -51,6 +51,13 @@ function injectLinkTokens(line: string, entryAddrToId: Map<string, string>) {
   out = out.replace(/\b(?:sub|function)_([0-9A-Fa-f]+)\b/g, (m, addr) => {
     const a = String(addr).toLowerCase()
     const fid = entryAddrToId.get(a) || entryAddrToId.get(`0x${a}`)
+    return fid ? mk(fid) : m
+  })
+
+  // Named function references (fast tokenization; avoids building a giant RegExp)
+  // e.g., winmainCRTStartup, init_global_seed
+  out = out.replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, (m) => {
+    const fid = nameToId.get(String(m).toLowerCase())
     return fid ? mk(fid) : m
   })
 
@@ -1640,7 +1647,7 @@ export default function App() {
     if (cached) return cached
 
     // 1) Inject link tokens into raw text (per line)
-    const raw = ghidraRows.map((r) => injectLinkTokens(r.text, entryAddrToId)).join('\n')
+    const raw = ghidraRows.map((r) => injectLinkTokens(r.text, entryAddrToId, nameToId)).join('\n')
 
     // 2) Highlight once for the whole block
     const highlighted = hljs.highlight(raw, { language: 'cpp' }).value
@@ -1883,14 +1890,15 @@ export default function App() {
                 className='pseudoCodeContent'
                 dangerouslySetInnerHTML={{
                   __html: replaceLinkTokens(
-                    hljs.highlight(injectLinkTokens(line, entryAddrToId), { language: 'cpp' }).value,
+                    hljs.highlight(injectLinkTokens(line, entryAddrToId, nameToId), { language: 'cpp' }).value,
                     displayNameById
                   )
                 }}
                 onClick={(e) => {
                   const target = e.target as HTMLElement
-                  if (target.classList.contains('codeLink')) {
-                    const fid = target.getAttribute('data-fid')
+                  const el = (target.closest('.codeLink') as HTMLElement | null) || null
+                  if (el) {
+                    const fid = el.getAttribute('data-fid')
                     if (fid) {
                       navigateTo(fid, { from: selected ?? undefined, recordEdge: true })
                       if (isMobile) setMobileTab('disasm')
@@ -2544,8 +2552,9 @@ export default function App() {
                           dangerouslySetInnerHTML={{ __html: ghidraHtmlRows[idx] || '' }}
                           onClick={(e) => {
                             const target = e.target as HTMLElement
-                            if (target.classList.contains('codeLink')) {
-                              const fid = target.getAttribute('data-fid')
+                            const el = (target.closest('.codeLink') as HTMLElement | null) || null
+                            if (el) {
+                              const fid = el.getAttribute('data-fid')
                               if (fid) {
                                 navigateTo(fid, { from: selected ?? undefined, recordEdge: true })
                                 if (isMobile) setMobileTab('disasm')
