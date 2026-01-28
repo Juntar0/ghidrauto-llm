@@ -10,34 +10,39 @@ from typing import Any
 def get_job_summary(work_dir: str, job_id: str) -> dict[str, Any]:
     """Get high-level job summary (file name, arch, function count, etc.)."""
     job_path = Path(work_dir) / job_id
+    analysis_file = job_path / "extract" / "analysis.json"
     meta_file = job_path / "meta.json"
-    functions_file = job_path / "functions.json"
-    strings_file = job_path / "strings.json"
     
     result: dict[str, Any] = {"job_id": job_id}
     
+    # Load meta.json if exists
     if meta_file.exists():
         try:
             with open(meta_file, "r", encoding="utf-8") as f:
-                result["meta"] = json.load(f)
+                meta = json.load(f)
+                result["meta"] = meta
         except Exception as e:
             result["meta_error"] = str(e)
     
-    if functions_file.exists():
+    # Load analysis.json
+    if analysis_file.exists():
         try:
-            with open(functions_file, "r", encoding="utf-8") as f:
-                functions = json.load(f)
-                result["function_count"] = len(functions)
-        except Exception:
-            result["function_count"] = 0
-    
-    if strings_file.exists():
-        try:
-            with open(strings_file, "r", encoding="utf-8") as f:
-                strings = json.load(f)
-                result["string_count"] = len(strings)
-        except Exception:
-            result["string_count"] = 0
+            with open(analysis_file, "r", encoding="utf-8") as f:
+                analysis = json.load(f)
+                result["function_count"] = len(analysis.get("functions", []))
+                result["string_count"] = len(analysis.get("strings", []))
+                
+                sample = analysis.get("sample", {})
+                if sample:
+                    result["sample"] = {
+                        "path": sample.get("path"),
+                        "arch": sample.get("arch"),
+                        "size": sample.get("size"),
+                        "md5": sample.get("md5"),
+                        "sha256": sample.get("sha256"),
+                    }
+        except Exception as e:
+            result["analysis_error"] = str(e)
     
     return result
 
@@ -45,14 +50,15 @@ def get_job_summary(work_dir: str, job_id: str) -> dict[str, Any]:
 def search_functions(work_dir: str, job_id: str, query: str = "", filters: dict[str, Any] | None = None, limit: int = 50) -> list[dict[str, Any]]:
     """Search functions by name/tag/score. Returns list of matching functions (max 50)."""
     job_path = Path(work_dir) / job_id
-    functions_file = job_path / "functions.json"
+    analysis_file = job_path / "extract" / "analysis.json"
     
-    if not functions_file.exists():
+    if not analysis_file.exists():
         return []
     
     try:
-        with open(functions_file, "r", encoding="utf-8") as f:
-            functions = json.load(f)
+        with open(analysis_file, "r", encoding="utf-8") as f:
+            analysis = json.load(f)
+            functions = analysis.get("functions", [])
     except Exception:
         return []
     
@@ -60,17 +66,23 @@ def search_functions(work_dir: str, job_id: str, query: str = "", filters: dict[
     query_lower = query.lower()
     
     for fn in functions:
-        name = (fn.get("name") or "").lower()
+        fn_id = fn.get("id", "")
+        fn_name = fn.get("name", "")
         
         # Simple query match
-        if query and query_lower not in name:
-            continue
+        if query:
+            searchable = f"{fn_id} {fn_name}".lower()
+            if query_lower not in searchable:
+                continue
         
         results.append({
-            "name": fn.get("name"),
-            "address": fn.get("address"),
-            "size": fn.get("size"),
-            "entry": fn.get("entry", False),
+            "id": fn_id,
+            "name": fn_name,
+            "entry": fn.get("entry", ""),
+            "size": fn.get("size", 0),
+            "is_entry": fn.get("entry") in ("entry", "true", "True", "1"),
+            "is_external": fn.get("is_external", False),
+            "is_winapi": fn.get("is_winapi", False),
         })
     
     # Enforce limit (max 50)
@@ -82,60 +94,96 @@ def search_functions(work_dir: str, job_id: str, query: str = "", filters: dict[
 def get_function_overview(work_dir: str, job_id: str, function_id: str) -> dict[str, Any]:
     """Get function overview (addr, size, calls, strings, AI status)."""
     job_path = Path(work_dir) / job_id
-    functions_file = job_path / "functions.json"
-    decomp_file = job_path / "decomp" / f"{function_id}.json"
+    analysis_file = job_path / "extract" / "analysis.json"
+    ai_result_file = job_path / "ai" / "results" / f"{function_id}.json"
+    ai_summary_file = job_path / "ai" / "summaries" / f"{function_id}.json"
+    index_file = job_path / "ai" / "index.json"
     
     result: dict[str, Any] = {"function_id": function_id}
     
-    # Find function in functions.json
-    if functions_file.exists():
+    # Find function in analysis.json
+    if analysis_file.exists():
         try:
-            with open(functions_file, "r", encoding="utf-8") as f:
-                functions = json.load(f)
+            with open(analysis_file, "r", encoding="utf-8") as f:
+                analysis = json.load(f)
+                functions = analysis.get("functions", [])
                 for fn in functions:
-                    if fn.get("name") == function_id or fn.get("address") == function_id:
-                        result["name"] = fn.get("name")
-                        result["address"] = fn.get("address")
-                        result["size"] = fn.get("size")
-                        result["entry"] = fn.get("entry", False)
+                    if fn.get("id") == function_id or fn.get("name") == function_id:
+                        result["name"] = fn.get("name", "")
+                        result["id"] = fn.get("id", "")
+                        result["entry"] = fn.get("entry", "")
+                        result["size"] = fn.get("size", 0)
+                        result["is_external"] = fn.get("is_external", False)
+                        result["is_winapi"] = fn.get("is_winapi", False)
+                        result["calls_out"] = fn.get("calls_out", [])
+                        result["called_by"] = fn.get("called_by", [])
                         break
         except Exception:
             pass
     
-    # Check AI decompile status
-    if decomp_file.exists():
+    # Check AI decompile status from index.json
+    if index_file.exists():
         try:
-            with open(decomp_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                result["ai_status"] = data.get("status", "ok")
-                result["has_pseudocode"] = bool(data.get("pseudocode"))
-                result["proposed_name"] = data.get("proposed_name")
+            with open(index_file, "r", encoding="utf-8") as f:
+                index = json.load(f)
+                entry = index.get(function_id, {})
+                result["ai_status"] = entry.get("status", "not_started")
+                result["proposed_name"] = entry.get("proposed_name")
         except Exception:
-            result["ai_status"] = "error"
-    else:
-        result["ai_status"] = "not_run"
+            pass
+    
+    # Load AI result if available
+    if ai_result_file.exists():
+        try:
+            with open(ai_result_file, "r", encoding="utf-8") as f:
+                ai_data = json.load(f)
+                result["has_pseudocode"] = bool(ai_data.get("pseudocode"))
+                result["confidence"] = ai_data.get("confidence")
+        except Exception:
+            pass
+    elif ai_summary_file.exists():
+        try:
+            with open(ai_summary_file, "r", encoding="utf-8") as f:
+                summary_data = json.load(f)
+                result["has_summary"] = True
+                result["summary_ja"] = summary_data.get("summary_ja")
+        except Exception:
+            pass
     
     return result
 
 
 def get_function_code(work_dir: str, job_id: str, function_id: str, view: str = "decompiler") -> dict[str, Any]:
-    """Get function code (disasm/decompiler/pcode)."""
+    """Get function code (disasm/decompiler/ai_pseudocode)."""
     job_path = Path(work_dir) / job_id
-    decomp_file = job_path / "decomp" / f"{function_id}.json"
+    disasm_file = job_path / "extract" / "disasm" / f"{function_id}.txt"
+    ghidra_decomp_file = job_path / "extract" / "decomp" / f"{function_id}.txt"
+    ai_result_file = job_path / "ai" / "results" / f"{function_id}.json"
     
     result: dict[str, Any] = {"function_id": function_id, "view": view}
     
-    if view == "decompiler" and decomp_file.exists():
+    if view == "disasm" and disasm_file.exists():
         try:
-            with open(decomp_file, "r", encoding="utf-8") as f:
+            result["code"] = disasm_file.read_text(encoding="utf-8")
+        except Exception as e:
+            result["error"] = str(e)
+    elif view == "ghidra" and ghidra_decomp_file.exists():
+        try:
+            result["code"] = ghidra_decomp_file.read_text(encoding="utf-8")
+        except Exception as e:
+            result["error"] = str(e)
+    elif view in ("decompiler", "ai", "pseudocode") and ai_result_file.exists():
+        try:
+            with open(ai_result_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 result["pseudocode"] = data.get("pseudocode", "")
                 result["proposed_name"] = data.get("proposed_name")
                 result["signature"] = data.get("signature")
+                result["confidence"] = data.get("confidence")
         except Exception as e:
             result["error"] = str(e)
     else:
-        result["error"] = f"View '{view}' not supported or file not found"
+        result["error"] = f"View '{view}' not found for function {function_id}"
     
     return result
 
@@ -154,8 +202,55 @@ def get_callgraph(work_dir: str, job_id: str, function_id: str, depth: int = 1, 
     # Enforce depth limit
     if depth > 2:
         depth = 2
-    # Placeholder: would need call graph data
-    return {"function_id": function_id, "depth": depth, "direction": direction, "nodes": [], "note": "callgraph not implemented"}
+    
+    job_path = Path(work_dir) / job_id
+    analysis_file = job_path / "extract" / "analysis.json"
+    
+    if not analysis_file.exists():
+        return {"function_id": function_id, "depth": depth, "direction": direction, "nodes": [], "error": "analysis.json not found"}
+    
+    try:
+        with open(analysis_file, "r", encoding="utf-8") as f:
+            analysis = json.load(f)
+            functions = analysis.get("functions", [])
+    except Exception as e:
+        return {"function_id": function_id, "error": str(e)}
+    
+    # Build lookup map
+    fn_map = {fn.get("id"): fn for fn in functions}
+    
+    # BFS traversal
+    visited = set()
+    result_nodes = []
+    queue = [(function_id, 0)]
+    
+    while queue:
+        current_id, current_depth = queue.pop(0)
+        
+        if current_id in visited or current_depth > depth:
+            continue
+        
+        visited.add(current_id)
+        fn = fn_map.get(current_id)
+        
+        if fn:
+            result_nodes.append({
+                "id": fn.get("id"),
+                "name": fn.get("name"),
+                "depth": current_depth,
+            })
+            
+            # Add children based on direction
+            if direction == "callee":
+                children = fn.get("calls_out", [])
+            else:  # caller
+                children = fn.get("called_by", [])
+            
+            for child in children:
+                if child not in visited:
+                    queue.append((child, current_depth + 1))
+    
+    return {"function_id": function_id, "depth": depth, "direction": direction, "nodes": result_nodes}
 
 
 def get_pe_map(work_dir: str, job_id: str, range_or_section: str = "") -> dict[str, Any]:
@@ -166,8 +261,23 @@ def get_pe_map(work_dir: str, job_id: str, range_or_section: str = "") -> dict[s
 
 def get_artifacts(work_dir: str, job_id: str, artifact_type: str = "all") -> dict[str, Any]:
     """Get artifacts (capa/FLOSS results)."""
-    # Placeholder: would need artifacts directory
-    return {"type": artifact_type, "artifacts": [], "note": "artifacts not implemented"}
+    job_path = Path(work_dir) / job_id
+    capa_file = job_path / "extract" / "capa.json"
+    
+    result: dict[str, Any] = {"type": artifact_type, "artifacts": {}}
+    
+    if artifact_type in ("all", "capa") and capa_file.exists():
+        try:
+            with open(capa_file, "r", encoding="utf-8") as f:
+                capa_data = json.load(f)
+                result["artifacts"]["capa"] = {
+                    "rules": capa_data.get("rules", {}),
+                    "meta": capa_data.get("meta", {}),
+                }
+        except Exception as e:
+            result["artifacts"]["capa"] = {"error": str(e)}
+    
+    return result
 
 
 def run_ai_decompile(work_dir: str, job_id: str, function_id: str, mode: str = "default") -> dict[str, Any]:
