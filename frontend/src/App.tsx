@@ -3171,13 +3171,14 @@ export default function App() {
                   for (const arr of byDepth.values()) arr.sort()
 
                   const positions = new Map<string, { x: number; y: number }>()
-                  const XGAP = 340
-                  const YGAP = 140
+                  // top-down layout: depth increases downward (y)
+                  const XGAP = 360
+                  const YGAP = 170
                   const depths = Array.from(byDepth.keys()).sort((a, b) => a - b)
                   for (const d of depths) {
                     const ids = byDepth.get(d) || []
                     for (let i = 0; i < ids.length; i++) {
-                      positions.set(ids[i], { x: (d === 999 ? 4 : d) * XGAP, y: i * YGAP })
+                      positions.set(ids[i], { x: i * XGAP, y: (d === 999 ? 4 : d) * YGAP })
                     }
                   }
 
@@ -3194,14 +3195,16 @@ export default function App() {
                       },
                       draggable: false,
                       style: {
-                        width: 280,
-                        padding: 10,
+                        width: 300,
+                        minHeight: 110,
+                        padding: 12,
                         borderRadius: 10,
-                        border: id === rootId ? '1px solid rgba(77,163,255,0.55)' : '1px solid rgba(255,255,255,0.12)',
-                        background: 'rgba(255,255,255,0.06)',
-                        fontSize: 12,
+                        border: id === rootId ? '1px solid rgba(77,163,255,0.65)' : '1px solid rgba(255,255,255,0.16)',
+                        background: 'rgba(10,10,10,0.85)',
+                        color: 'rgba(255,255,255,0.92)',
+                        fontSize: 13,
                         whiteSpace: 'pre-wrap',
-                        lineHeight: 1.35,
+                        lineHeight: 1.45,
                       },
                     }
                   })
@@ -3226,9 +3229,9 @@ export default function App() {
                           setShowCFG(false)
                         }}
                       >
-                        <MiniMap />
+                        <MiniMap nodeColor={() => 'rgba(255,255,255,0.18)'} maskColor='rgba(0,0,0,0.5)' />
                         <Controls />
-                        <Background />
+                        <Background gap={18} size={1} color='rgba(255,255,255,0.08)' />
                       </ReactFlow>
                     </div>
                   )
