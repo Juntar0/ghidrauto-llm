@@ -970,42 +970,49 @@ def process_request(s: Settings, req: dict) -> None:
         if (not force) and out_path.exists():
             existing = _load_json(out_path, {})
             if existing.get("analysis_hash") == ah and existing.get("status") == "ok":
-                if is_summary_task:
-                    _update_index(
-                        idx_path,
-                        fid,
+                # If we introduced new required fields (e.g., summary_ja), do not treat older cached files as valid.
+                if not is_summary_task:
+                    sj = existing.get("summary_ja")
+                    if not isinstance(sj, str) or len(sj.strip()) < 30:
+                        existing = None
+
+                if existing is not None:
+                    if is_summary_task:
+                        _update_index(
+                            idx_path,
+                            fid,
+                            {
+                                "summary_status": "ok",
+                                "summary_updated_at": existing.get("updated_at"),
+                                "summary_confidence": existing.get("confidence"),
+                                "summary_model": existing.get("model"),
+                            },
+                        )
+                    else:
+                        _update_index(
+                            idx_path,
+                            fid,
+                            {
+                                "status": "ok",
+                                "updated_at": existing.get("updated_at"),
+                                "confidence": existing.get("confidence"),
+                                "proposed_name": existing.get("proposed_name"),
+                                "model": existing.get("model"),
+                            },
+                        )
+                    _append_log(
+                        base,
                         {
-                            "summary_status": "ok",
-                            "summary_updated_at": existing.get("updated_at"),
-                            "summary_confidence": existing.get("confidence"),
-                            "summary_model": existing.get("model"),
-                        },
-                    )
-                else:
-                    _update_index(
-                        idx_path,
-                        fid,
-                        {
-                            "status": "ok",
-                            "updated_at": existing.get("updated_at"),
-                            "confidence": existing.get("confidence"),
-                            "proposed_name": existing.get("proposed_name"),
+                            "ts": _now_jst_iso(),
+                            "job_id": job_id,
+                            "function_id": fid,
+                            "event": "cache_hit",
                             "model": existing.get("model"),
+                            "updated_at": existing.get("updated_at"),
+                            "task": task,
                         },
                     )
-                _append_log(
-                    base,
-                    {
-                        "ts": _now_jst_iso(),
-                        "job_id": job_id,
-                        "function_id": fid,
-                        "event": "cache_hit",
-                        "model": existing.get("model"),
-                        "updated_at": existing.get("updated_at"),
-                        "task": task,
-                    },
-                )
-                return
+                    return
 
         # Guardrail loop: retry until we get a satisfactory JSON payload.
         t_start = time.time()
