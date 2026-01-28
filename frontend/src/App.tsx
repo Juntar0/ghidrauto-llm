@@ -2308,7 +2308,10 @@ export default function App() {
           {/* Disasm */}
           <section className='pane' style={isMobile && mobileTab !== 'disasm' ? { display: 'none' } : undefined}>
             <div className='paneHeader'>
-              <h4>Disassembly</h4>
+              <h4>
+                Disassembly
+                {disasmRows.length > 0 && <span className='secondary' style={{ fontSize: 12, marginLeft: 8 }}>({disasmRows.length} lines)</span>}
+              </h4>
               <span className='sub'>{selectedFn?.entry ? `@ ${selectedFn.entry}` : selected ?? ''}</span>
             </div>
             <div className='paneBody'>
@@ -2354,7 +2357,10 @@ export default function App() {
           {/* Ghidra decompiler output */}
           <section className='pane' style={isMobile && mobileTab !== 'ghidra' ? { display: 'none' } : undefined}>
             <div className='paneHeader'>
-              <h4>Ghidra</h4>
+              <h4>
+                Ghidra
+                {ghidraRows.length > 0 && <span className='secondary' style={{ fontSize: 12, marginLeft: 8 }}>({ghidraRows.length} lines)</span>}
+              </h4>
               <span className='sub'>{displayName(selected) || ''}</span>
             </div>
             <div className='paneBody'>
@@ -2395,7 +2401,14 @@ export default function App() {
           {/* AI pseudocode */}
           <section className='pane' style={isMobile && mobileTab !== 'ai' ? { display: 'none' } : undefined}>
             <div className='paneHeader'>
-              <h4>AI</h4>
+              <h4>
+                AI
+                {(() => {
+                  const code = ai?.pseudocode || ''
+                  const lineCount = code ? code.split('\n').length : 0
+                  return lineCount > 0 ? <span className='secondary' style={{ fontSize: 12, marginLeft: 8 }}>({lineCount} lines)</span> : null
+                })()}
+              </h4>
               <span className='sub'>
                 {selected ? (index[selected]?.status || ai?.status || '') : ai?.status || ''}
                 {selected && lastDecompileFid === selected && lastDecompileResp?.status && lastDecompileResp.status !== (index[selected]?.status || ai?.status)
