@@ -1703,7 +1703,7 @@ export default function App() {
               <span className='badge'>{filteredFunctions.length}</span>
             </div>
 
-            <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
               <input
                 className='input'
                 value={fnQuery}
@@ -1711,14 +1711,22 @@ export default function App() {
                 placeholder='Filter: FUN_ / name / proposed_name'
                 style={{ flex: 1, minWidth: 220 }}
               />
-              <button className={`smallBtn ${entryOnly ? 'smallBtnActive' : ''}`} onClick={() => setEntryOnly(!entryOnly)}>
-                Entry only
-              </button>
-              <button className={`smallBtn ${winApiOnly ? 'smallBtnActive' : ''}`} onClick={() => setWinApiOnly(!winApiOnly)}>
-                Win API only
+              <button
+                className={`tinyBtn ${entryOnly ? 'tinyBtnActive' : ''}`}
+                onClick={() => setEntryOnly(!entryOnly)}
+                title='Entry'
+              >
+                Entry
               </button>
               <button
-                className='smallBtn'
+                className={`tinyBtn ${winApiOnly ? 'tinyBtnActive' : ''}`}
+                onClick={() => setWinApiOnly(!winApiOnly)}
+                title='WinAPI'
+              >
+                WinAPI
+              </button>
+              <button
+                className='tinyBtn'
                 onClick={() => {
                   setFnQuery('')
                   setEntryOnly(false)
