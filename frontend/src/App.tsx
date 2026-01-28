@@ -2643,11 +2643,13 @@ export default function App() {
                                   ? '(file-level)'
                                   : 'N/A'
 
-                              const addrHex = addrValue ? addrValue.toString(16).toUpperCase().padStart(8, '0') : null
-                              const matchingFunc = addrHex && analysis?.functions
+                              const matchingFunc = addrValue != null && analysis?.functions
                                 ? analysis.functions.find((f: any) => {
-                                    const fEntry = String(f.entry || '').toUpperCase().replace(/^0X/, '')
-                                    return fEntry === addrHex
+                                    // Compare numerically to support both 32-bit (8 hex) and 64-bit (9-16 hex) addresses.
+                                    const fEntryStr = String(f.entry || '').trim().toLowerCase().replace(/^0x/, '')
+                                    const fEntryVal = Number.parseInt(fEntryStr, 16)
+                                    if (!Number.isFinite(fEntryVal)) return false
+                                    return fEntryVal === addrValue
                                   })
                                 : null
                               const functionId = matchingFunc?.id || null
