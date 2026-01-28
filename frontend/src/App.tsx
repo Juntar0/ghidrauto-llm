@@ -2518,13 +2518,20 @@ export default function App() {
                           {ruleData.matches && ruleData.matches.length > 0 && (
                             <div style={{ marginBottom: 12 }}>
                               <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>
-                                Matches:
+                                Matches ({ruleData.matches.length}):
                               </div>
-                              {ruleData.matches.slice(0, 10).map((match: any, idx: number) => (
-                                <div key={idx} style={{ fontSize: '12px', fontFamily: 'monospace', marginBottom: 4 }}>
-                                  • {match.address || 'N/A'}: {match.description || ''}
-                                </div>
-                              ))}
+                              {ruleData.matches.slice(0, 10).map((match: any, idx: number) => {
+                                // CAPA match format: [[{type, value}, {...}], ...]
+                                const firstLoc = match && match[0];
+                                const addr = firstLoc?.type === 'absolute' && firstLoc?.value 
+                                  ? `0x${firstLoc.value.toString(16).toUpperCase()}`
+                                  : (firstLoc?.type === 'no address' ? '(file-level)' : 'N/A');
+                                return (
+                                  <div key={idx} style={{ fontSize: '12px', fontFamily: 'monospace', marginBottom: 4 }}>
+                                    • {addr}
+                                  </div>
+                                );
+                              })}
                               {ruleData.matches.length > 10 && (
                                 <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
                                   ... and {ruleData.matches.length - 10} more
