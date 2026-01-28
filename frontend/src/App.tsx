@@ -835,19 +835,13 @@ export default function App() {
 
     const sorted = [...arr].sort(sorters[sortKey])
 
-    // de-dupe: imported/external stubs often appear multiple times with the same name
+    // de-dupe by id (same name functions with different entry points)
     const seen = new Set<string>()
     const deduped: typeof sorted = []
     for (const f of sorted) {
-      const isWinApi = Boolean((f as any).is_winapi)
-      const isExternal = Boolean((f as any).is_external)
-      if (isWinApi || isExternal) {
-        const nm = String((f as any).name || (f as any).id).toLowerCase()
-        const dll = String((f as any).dll || '')
-        const key = `${isWinApi ? 'w' : 'x'}:${dll.toLowerCase()}:${nm}`
-        if (seen.has(key)) continue
-        seen.add(key)
-      }
+      const id = String(f.id).toLowerCase()
+      if (seen.has(id)) continue
+      seen.add(id)
       deduped.push(f)
     }
 
