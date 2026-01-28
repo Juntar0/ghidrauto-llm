@@ -3260,7 +3260,7 @@ export default function App() {
                         summary: hasSummary ? sj : '(no summary)',
                         hasSummary,
                       },
-                      draggable: false,
+                      draggable: true,
                     }
                   })
 
