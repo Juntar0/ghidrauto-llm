@@ -651,11 +651,6 @@ export default function App() {
   })())
 
   const [winApiOnly, setWinApiOnly] = useLocalStorageState<boolean>('autore.winApiOnly', false)
-  const [winApiShowAll, setWinApiShowAll] = useLocalStorageState<boolean>('autore.winApiShowAll', false)
-
-  const [panelUserEntryOpen, setPanelUserEntryOpen] = useLocalStorageState<boolean>('autore.panel.userEntryOpen', true)
-  const [panelWinApiOpen, setPanelWinApiOpen] = useLocalStorageState<boolean>('autore.panel.winApiOpen', true)
-  const [panelOepOpen, setPanelOepOpen] = useLocalStorageState<boolean>('autore.panel.oepOpen', true)
 
   const [sidebarWidth, setSidebarWidth] = useLocalStorageState<number>('autore.sidebarWidth', 320)
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorageState<boolean>('autore.sidebarCollapsed', false)
@@ -758,7 +753,6 @@ export default function App() {
     return [...arr].sort(sorters[sortKey])
   }, [functions, entryOnly, winApiOnly, entryFunctionId, fnQuery, index, sortKey])
 
-  // --- Recommended panels (User Entry -> Win API -> OEP)
   const mainCandidates = useMemo(() => {
     // Heuristic candidates list with "reasons" shown in UI.
     const mk = (id: string) => funcById.get(id)
@@ -883,39 +877,6 @@ export default function App() {
     return [...primary, ...secondary]
   }, [mainCandidates, funcById])
 
-
-  const oepCandidates = useMemo(() => {
-    const out: Array<{ id: string; label: string; note: string }> = []
-
-    // OEP / entry
-    const entry = functions.find((f) => String(f.name || f.id).toLowerCase() === 'entry')
-    if (entry) out.push({ id: entry.id, label: entry.name ?? entry.id, note: 'OEP (entry)' })
-
-    // tls callbacks
-    for (const f of functions) {
-      const n = String(f.name || f.id)
-      if (n.toLowerCase().startsWith('tls_callback')) out.push({ id: f.id, label: f.name ?? f.id, note: 'TLS callback' })
-    }
-
-    // default function (often tls)
-    if (entryFunctionId && !out.some((x) => x.id === entryFunctionId)) {
-      const f = funcById.get(entryFunctionId)
-      out.unshift({ id: entryFunctionId, label: f?.name ?? entryFunctionId, note: 'default (extractor)' })
-    }
-
-    // de-dupe
-    const byId = new Map<string, { id: string; label: string; note: string }>()
-    for (const x of out) byId.set(x.id, x)
-    return Array.from(byId.values()).slice(0, 10)
-  }, [functions, funcById, entryFunctionId])
-
-  const winApiFunctions = useMemo(() => {
-    const arr = (functions as any[])
-      .filter((f) => Boolean((f as any).is_winapi))
-      .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)))
-
-    return winApiShowAll ? arr : arr.slice(0, 50)
-  }, [functions, winApiShowAll])
 
   async function loadAnalysis(id: string) {
     setAnalysis(null)
@@ -1650,44 +1611,6 @@ export default function App() {
                 <span className='secondary'>{functions.length} funcs</span>
               </div>
 
-              <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-                <input
-                  className='input'
-                  value={fnQuery}
-                  onChange={(e) => setFnQuery(e.target.value)}
-                  placeholder='Search: FUN_ / name / proposed_name'
-                />
-              </div>
-
-              <div style={{ marginTop: 8, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-                <label className='secondary' style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input type='checkbox' checked={entryOnly} onChange={(e) => setEntryOnly(e.target.checked)} />
-                  entry only
-                </label>
-                <label className='secondary' style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input type='checkbox' checked={winApiOnly} onChange={(e) => setWinApiOnly(e.target.checked)} />
-                  Win API only
-                </label>
-              </div>
-
-              <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span className='secondary' style={{ whiteSpace: 'nowrap' }}>
-                  Sort
-                </span>
-                <select
-                  className='input'
-                  value={sortKey}
-                  onChange={(e) => setSortKey(e.target.value as SortKey)}
-                  style={{ padding: '8px 10px' }}
-                >
-                  <option value='entry'>Entry</option>
-                  <option value='size'>Size</option>
-                  <option value='name'>Name</option>
-                  <option value='status'>Status</option>
-                  <option value='updated'>Updated</option>
-                </select>
-              </div>
-
               <div className='secondary' style={{ marginTop: 8 }}>
                 Tip: 逆アセンブル中心なら中央ペインを広め、疑似コード中心なら右ペインを広めに。
               </div>
@@ -1775,161 +1698,54 @@ export default function App() {
               </div>
             )}
 
-            {/* Recommended panels */}
-            {jobId ? (
-              <div style={{ marginBottom: 12 }}>
-                {/* User Entry (collapsible) */}
-                <details className='fold' open={panelUserEntryOpen} onToggle={(e) => setPanelUserEntryOpen((e.target as any).open)}>
-                  <summary className='foldSummary'>
-                    <div className='sectionTitleRow' style={{ marginBottom: 0, width: '100%' }}>
-                      <strong>User Entry</strong>
-                      <span className='badge'>{userEntryCandidates.length}</span>
-                    </div>
-                  </summary>
-                  <div className='foldBody'>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '6px 0 8px 0' }}>
-                      <button
-                        className='smallBtn'
-                        onClick={async () => {
-                          if (jobId) await findMain(jobId)
-                        }}
-                        title='Try to guess user-code entry (WinMain/main) and auto-run AI for top 3'
-                        disabled={!jobId}
-                      >
-                        Find main
-                      </button>
-                      {mainGuessError ? <span className='secondary'>error: {mainGuessError}</span> : null}
-                      {mainGuess?.function_id ? (
-                        <span className='secondary'>picked: {mainGuess.function_id}</span>
-                      ) : (
-                        <span className='secondary'>not picked yet</span>
-                      )}
-                    </div>
-
-                    {userEntryCandidates.length ? (
-                      <div className='functionList' style={{ marginBottom: 10 }}>
-                        {userEntryCandidates.map((c) => (
-                          <div
-                            key={`user-${c.id}`}
-                            className={`fnItem ${selected === c.id ? 'fnItemSelected' : ''}`}
-                            onClick={() => {
-                              navigateTo(c.id, { from: entryFunctionId || undefined, recordEdge: true })
-                              if (isMobile) {
-                                setMobileSidebarOpen(false)
-                                setMobileTab('disasm')
-                              }
-                            }}
-                            title={(c.reasons ?? []).join(' | ')}
-                          >
-                            <div className='fnMeta'>
-                              <div className='fnName'>{c.label}</div>
-                              <div className='fnSub'>
-                                <span style={{ fontFamily: 'monospace' }}>{c.id}</span>
-                                <span>score {c.score.toFixed(2)}</span>
-                                {c.reasons?.length ? <span>理由: {c.reasons.slice(0, 2).join(' / ')}</span> : null}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className='secondary' style={{ marginBottom: 10 }}>No user-entry candidates yet.</div>
-                    )}
-                  </div>
-                </details>
-
-                {/* Win API (collapsible) */}
-                <details className='fold' open={panelWinApiOpen} onToggle={(e) => setPanelWinApiOpen((e.target as any).open)}>
-                  <summary className='foldSummary'>
-                    <div className='sectionTitleRow' style={{ marginBottom: 0, width: '100%' }}>
-                      <strong>Win API</strong>
-                      <span className='badge'>{(analysis?.functions ?? []).filter((f: any) => Boolean((f as any).is_winapi)).length}</span>
-                    </div>
-                  </summary>
-                  <div className='foldBody'>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '6px 0 8px 0' }}>
-                      <label className='secondary' style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <input type='checkbox' checked={winApiShowAll} onChange={(e) => setWinApiShowAll(e.target.checked)} />
-                        show all
-                      </label>
-                      <span className='secondary'>{winApiShowAll ? 'all' : 'top 50'}</span>
-                    </div>
-                    {winApiFunctions.length ? (
-                      <div className='functionList' style={{ marginBottom: 10 }}>
-                        {winApiFunctions.map((f: any) => (
-                          <div
-                            key={`winapi-${f.id}`}
-                            className={`fnItem ${selected === f.id ? 'fnItemSelected' : ''}`}
-                            onClick={() => {
-                              navigateTo(f.id)
-                              if (isMobile) {
-                                setMobileSidebarOpen(false)
-                                setMobileTab('disasm')
-                              }
-                            }}
-                            title={f.dll ? `dll: ${f.dll}` : 'Win API'}
-                          >
-                            <div className='fnMeta'>
-                              <div className='fnName'>{f.name ?? f.id}</div>
-                              <div className='fnSub'>
-                                <span style={{ fontFamily: 'monospace' }}>{f.id}</span>
-                                {f.dll ? <span>{f.dll}</span> : null}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className='secondary' style={{ marginBottom: 10 }}>No Win API functions.</div>
-                    )}
-                  </div>
-                </details>
-
-                {/* OEP / TLS (collapsible) */}
-                <details className='fold' open={panelOepOpen} onToggle={(e) => setPanelOepOpen((e.target as any).open)}>
-                  <summary className='foldSummary'>
-                    <div className='sectionTitleRow' style={{ marginBottom: 0, width: '100%' }}>
-                      <strong>OEP / TLS</strong>
-                      <span className='badge'>{oepCandidates.length}</span>
-                    </div>
-                  </summary>
-                  <div className='foldBody'>
-                    {oepCandidates.length ? (
-                      <div className='functionList' style={{ marginBottom: 10 }}>
-                        {oepCandidates.map((c) => (
-                          <div
-                            key={`oep-${c.id}`}
-                            className={`fnItem ${selected === c.id ? 'fnItemSelected' : ''}`}
-                            onClick={() => {
-                              navigateTo(c.id)
-                              if (isMobile) {
-                                setMobileSidebarOpen(false)
-                                setMobileTab('disasm')
-                              }
-                            }}
-                            title={c.note}
-                          >
-                            <div className='fnMeta'>
-                              <div className='fnName'>{c.label}</div>
-                              <div className='fnSub'>
-                                <span style={{ fontFamily: 'monospace' }}>{c.id}</span>
-                                <span>{c.note}</span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className='secondary' style={{ marginBottom: 10 }}>No entrypoint data.</div>
-                    )}
-                  </div>
-                </details>
-              </div>
-            ) : null}
-
             <div className='sectionTitleRow'>
               <strong>Functions</strong>
               <span className='badge'>{filteredFunctions.length}</span>
+            </div>
+
+            <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                className='input'
+                value={fnQuery}
+                onChange={(e) => setFnQuery(e.target.value)}
+                placeholder='Filter: FUN_ / name / proposed_name'
+                style={{ flex: 1, minWidth: 220 }}
+              />
+              <button className={`smallBtn ${entryOnly ? 'smallBtnActive' : ''}`} onClick={() => setEntryOnly(!entryOnly)}>
+                Entry only
+              </button>
+              <button className={`smallBtn ${winApiOnly ? 'smallBtnActive' : ''}`} onClick={() => setWinApiOnly(!winApiOnly)}>
+                Win API only
+              </button>
+              <button
+                className='smallBtn'
+                onClick={() => {
+                  setFnQuery('')
+                  setEntryOnly(false)
+                  setWinApiOnly(false)
+                }}
+                title='Clear filters'
+              >
+                Clear
+              </button>
+            </div>
+
+            <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span className='secondary' style={{ whiteSpace: 'nowrap' }}>
+                Sort
+              </span>
+              <select
+                className='input'
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as SortKey)}
+                style={{ padding: '8px 10px' }}
+              >
+                <option value='entry'>Entry</option>
+                <option value='size'>Size</option>
+                <option value='name'>Name</option>
+                <option value='status'>Status</option>
+                <option value='updated'>Updated</option>
+              </select>
             </div>
 
             <div className='functionList'>
