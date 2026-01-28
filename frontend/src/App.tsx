@@ -275,6 +275,7 @@ function CallTreeView({
   functions,
   selected,
   onNavigate,
+  displayName,
 }: {
   functions: Array<{
     id: string
@@ -286,6 +287,7 @@ function CallTreeView({
   }>
   selected: string | null
   onNavigate: (fid: string) => void
+  displayName: (fid: string) => string
 }) {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = useState<'tree' | 'list'>('tree')
@@ -334,7 +336,7 @@ function CallTreeView({
           className='fnItem'
         >
           <div className='fnMeta'>
-            <div className='fnName'>↻ {funcMap.get(fid)?.name || fid} (circular)</div>
+            <div className='fnName'>↻ {displayName(fid) || fid} (circular)</div>
           </div>
         </div>
       )
@@ -415,7 +417,7 @@ function CallTreeView({
           <div className='fnMeta' style={{ flex: 1 }}>
             <div className='fnName'>
               {via ? <span className='callEdgePrefix'>↳ {via.idx}</span> : null}
-              {func.name}
+              {displayName(func.id)}
             </div>
             <div className='fnSub'>
               <span>@ {func.entry}</span>
@@ -447,7 +449,7 @@ function CallTreeView({
               style={{ cursor: 'pointer' }}
             >
               <div className='fnMeta'>
-                <div className='fnName'>{func.name}</div>
+                <div className='fnName'>{displayName(func.id)}</div>
                 <div className='fnSub'>
                   <span>@ {func.entry}</span>
                   <span>{func.size} bytes</span>
@@ -709,6 +711,22 @@ export default function App() {
   const selectedFn = useMemo(() => functions.find((f) => f.id === selected) ?? null, [functions, selected])
   const funcById = useMemo(() => new Map(functions.map((f) => [f.id, f])), [functions])
 
+  // Unified display name: always prefer AI-proposed name when available.
+  const displayNameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const f of functions as any[]) {
+      const proposed = index[f.id]?.proposed_name
+      const base = proposed || f.name || f.id
+      m.set(f.id, String(base))
+    }
+    return m
+  }, [functions, index])
+
+  const displayName = (id?: string | null) => {
+    if (!id) return ''
+    return displayNameById.get(id) ?? id
+  }
+
   const filteredFunctions = useMemo(() => {
     let arr = functions
 
@@ -724,7 +742,7 @@ export default function App() {
     if (q) {
       arr = arr.filter((f) => {
         const st = index[f.id]
-        const hay = `${f.id} ${f.name} ${f.entry} ${st?.proposed_name ?? ''}`.toLowerCase()
+        const hay = `${f.id} ${f.name} ${displayNameById.get(f.id) ?? ''} ${f.entry} ${st?.proposed_name ?? ''}`.toLowerCase()
         return hay.includes(q)
       })
     }
@@ -853,14 +871,14 @@ export default function App() {
 
       // keep if any signal
       if (score >= 0.35 || lowName === 'entry' || lowName.startsWith('tls_callback')) {
-        scored.push({ id: f.id, score, reasons, label: f.name ?? f.id })
+        scored.push({ id: f.id, score, reasons, label: displayNameById.get(f.id) ?? f.name ?? f.id })
       }
     }
 
     // ensure "entry" shows even if no calls_out
     const entry = functions.find((f) => String(f.name || f.id).toLowerCase() === 'entry')
     if (entry && !scored.some((x) => x.id === entry.id)) {
-      scored.push({ id: entry.id, score: 0.95, reasons: ['OEP: entry', 'CRT/stub likely'], label: entry.name ?? entry.id })
+      scored.push({ id: entry.id, score: 0.95, reasons: ['OEP: entry', 'CRT/stub likely'], label: displayNameById.get(entry.id) ?? entry.name ?? entry.id })
     }
 
     // also include backend-predicted main on top
@@ -868,7 +886,7 @@ export default function App() {
       const f = mk(mainGuess.function_id)
       scored.push({
         id: mainGuess.function_id,
-        label: f?.name ?? mainGuess.function_id,
+        label: displayNameById.get(mainGuess.function_id) ?? f?.name ?? mainGuess.function_id,
         score: 0.99,
         reasons: [mainGuess.reason ? `predicted: ${mainGuess.reason}` : 'predicted'],
       })
@@ -876,7 +894,7 @@ export default function App() {
 
     scored.sort((a, b) => b.score - a.score)
     return scored.slice(0, 12)
-  }, [functions, funcById, mainGuess])
+  }, [functions, funcById, mainGuess, displayNameById])
 
   // User Entry shown in sidebar: top 3 candidates with score + reasons.
   // Prefer mainCandidates (calls-based heuristics) so it works even when names are generic.
@@ -1782,7 +1800,7 @@ export default function App() {
                 const isEntry = entryFunctionId && f.id === entryFunctionId
                 const isWinApi = (f as any).is_winapi || false
                 const isExternal = (f as any).is_external || false
-                const label = proposed ? proposed : f.name && f.name !== f.id ? `${f.name}` : f.id
+                const label = displayName(f.id)
 
                 return (
                   <div
@@ -1846,7 +1864,7 @@ export default function App() {
                 if (selected) {
                   return (
                     <>
-                      <strong style={{ color: 'rgba(255,255,255,0.92)' }}>{selectedFn?.name ?? selected}</strong>
+                      <strong style={{ color: 'rgba(255,255,255,0.92)' }}>{displayName(selected)}</strong>
                       <span style={{ marginLeft: 10 }}>{selectedFn?.entry ? `@ ${selectedFn.entry}` : ''}</span>
                       {analysis?.sample?.path ? (
                         <span style={{ marginLeft: 10, color: 'rgba(255,255,255,0.55)' }}>
@@ -2248,7 +2266,7 @@ export default function App() {
                           >
                             <div className='fnMeta'>
                               <div className='fnName'>
-                                #{i + 1} {item.name || item.function_id}
+                                #{i + 1} {displayName(item.function_id) || item.name || item.function_id}
                               </div>
                               <div className='fnSub'>
                                 <span>{item.call_count} calls</span>
@@ -2270,7 +2288,7 @@ export default function App() {
               {ai?.status === 'ok' ? (
                 <>
                   <div className='pseudoTitle'>
-                    <div className='pseudoName'>{ai.proposed_name ?? selectedFn?.name ?? selected ?? ''}</div>
+                    <div className='pseudoName'>{ai.proposed_name ?? displayName(selected)}</div>
                     <div className='pseudoSig'>{ai.signature ?? ''}</div>
                   </div>
 
@@ -2375,6 +2393,7 @@ export default function App() {
                   navigateTo(fid)
                   setShowCallTree(false)
                 }}
+                displayName={displayName}
               />
             </div>
           </div>
@@ -3075,7 +3094,7 @@ export default function App() {
               <div>
                 <h3 style={{ margin: 0, fontSize: 18 }}>Xrefs</h3>
                 <div className='secondary' style={{ fontSize: 12, marginTop: 4 }}>
-                  {selectedFn.name} ({selectedFn.id})
+                  {displayName(selectedFn.id)} ({selectedFn.id})
                 </div>
               </div>
               <button className='smallBtn' onClick={() => setShowXrefs(false)} style={{ fontSize: 20, padding: '4px 12px' }}>
@@ -3092,8 +3111,7 @@ export default function App() {
                 <div className='functionList'>
                   {(selectedFn.called_by ?? []).length ? (
                     (selectedFn.called_by ?? []).map((fid) => {
-                      const f = funcById.get(fid)
-                      const label = f?.name ?? fid
+                      const label = displayName(fid)
                       return (
                         <div
                           key={`in-${fid}`}
@@ -3128,8 +3146,7 @@ export default function App() {
                 <div className='functionList'>
                   {(selectedFn.calls_out ?? []).length ? (
                     (selectedFn.calls_out ?? []).map((fid, i) => {
-                      const f = funcById.get(fid)
-                      const label = f?.name ?? fid
+                      const label = displayName(fid)
                       return (
                         <div
                           key={`out-${fid}-${i}`}
