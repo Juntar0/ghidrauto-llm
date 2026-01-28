@@ -2,6 +2,12 @@
 
 ## 追加機能：CAPA統合（マルウェア能力検出）
 
+## 追記（2026-01-28 後半）: CAPA インストーラー + UI自動導入
+- `install_capa.sh` を追加（standalone capa を ~/.local/bin もしくは /usr/local/bin に導入）
+- `run_backend.sh` / `run_worker.sh` が `~/.local/bin` を PATH に追加（ユーザー導入でも検出可能）
+- Backend: `GET /api/tools/capa/status`, `POST /api/tools/capa/install` を追加
+- Frontend: **CAPA** ボタン押下時に未導入なら自動導入を試行し、導入後は Re-extract を促す
+
 ### 概要
 FLARE CAPAをExtract時に自動実行し、検出されたマルウェア能力をUI表示する機能を実装。
 

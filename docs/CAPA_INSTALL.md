@@ -4,7 +4,18 @@ CAPAは、FLARE CAPAマルウェア能力検出ツールです。ghidrauto-llm�
 
 ## インストール（Ubuntu/Debian）
 
-### 1. CAPAバイナリのダウンロード
+### 推奨: 付属インストーラー（自動）
+`ghidrauto-llm` には CAPA の簡易インストーラーを同梱しています。
+
+```bash
+cd ~/ghidrauto-llm
+chmod +x install_capa.sh
+./install_capa.sh
+```
+
+> UI の **CAPA** ボタン押下時も、未インストールなら自動でインストーラー実行を試みます。
+
+### 手動: 1. CAPAバイナリのダウンロード
 
 ```bash
 cd /tmp

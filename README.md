@@ -19,9 +19,16 @@ Node/npm is **not required** for normal use because `frontend/dist` is committed
 
 ## Quick install (fresh Ubuntu)
 ```bash
-git clone <your repo url>
-cd autore
+git clone https://github.com/Juntar0/ghidrauto-llm.git
+cd ghidrauto-llm
 ./install_ubuntu.sh
+```
+
+### Optional: CAPA auto-install
+The UI can auto-install the standalone **CAPA** binary when you click the **CAPA** button.
+If you prefer manual install:
+```bash
+./install_capa.sh
 ```
 
 Then edit `.env` and set at least one AI option:
