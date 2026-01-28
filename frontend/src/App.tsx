@@ -26,7 +26,8 @@ function addFunctionLinks(
   html: string,
   entryAddrToId: Map<string, string>,
   _nameToId: Map<string, string>,
-  _onNavigate: (fid: string) => void
+  _onNavigate: (fid: string) => void,
+  displayNameById: Map<string, string>
 ): string {
   // Replace function name patterns with clickable spans
   let result = html
@@ -36,7 +37,8 @@ function addFunctionLinks(
     const lowerAddr = addr.toLowerCase()
     const fid = entryAddrToId.get(lowerAddr) || entryAddrToId.get(`0x${lowerAddr}`)
     if (fid) {
-      return `<span class="codeLink" data-fid="${fid}">${match}</span>`
+      const displayName = displayNameById.get(fid) || match
+      return `<span class="codeLink" data-fid="${fid}" title="${fid}">${displayName}</span>`
     }
     return match
   })
@@ -46,7 +48,8 @@ function addFunctionLinks(
     const lowerAddr = addr.toLowerCase()
     const fid = entryAddrToId.get(lowerAddr) || entryAddrToId.get(`0x${lowerAddr}`)
     if (fid) {
-      return `<span class="codeLink" data-fid="${fid}">${match}</span>`
+      const displayName = displayNameById.get(fid) || match
+      return `<span class="codeLink" data-fid="${fid}" title="${fid}">${displayName}</span>`
     }
     return match
   })
@@ -1823,7 +1826,8 @@ export default function App() {
                     hljs.highlight(line, { language: 'cpp' }).value,
                     entryAddrToId,
                     nameToId,
-                    navigateTo
+                    navigateTo,
+                    displayNameById
                   )
                 }}
                 onClick={(e) => {
@@ -2458,7 +2462,8 @@ export default function App() {
                               hljs.highlight(r.text, { language: 'cpp' }).value,
                               entryAddrToId,
                               nameToId,
-                              navigateTo
+                              navigateTo,
+                              displayNameById
                             )
                           }}
                           onClick={(e) => {
