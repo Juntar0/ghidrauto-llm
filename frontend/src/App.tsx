@@ -1,6 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
-import ReactFlow, { Background, Controls, MiniMap, Handle, Position, type Edge, type Node, type NodeProps } from 'reactflow'
+import ReactFlow, {
+  Background,
+  Controls,
+  MiniMap,
+  Handle,
+  Position,
+  applyEdgeChanges,
+  applyNodeChanges,
+  type Edge,
+  type Node,
+  type NodeProps,
+} from 'reactflow'
 import 'reactflow/dist/style.css'
 
 type Analysis = {
@@ -615,6 +626,8 @@ export default function App() {
   const [cfgLoading, setCfgLoading] = useState<boolean>(false)
   const [cfgError, setCfgError] = useState<string | null>(null)
   const [cfgDepth, setCfgDepth] = useState<number>(3)
+  const [cfgNodes, setCfgNodes] = useState<Node[]>([])
+  const [cfgEdges, setCfgEdges] = useState<Edge[]>([])
   const [capaData, setCapaData] = useState<any>(null)
   const [mainGuess, setMainGuess] = useState<{ function_id: string; reason?: string } | null>(null)
   const [mainGuessError, setMainGuessError] = useState<string | null>(null)
@@ -1065,6 +1078,90 @@ export default function App() {
       setCfgLoading(false)
     }
   }
+
+  // Build draggable CFG nodes/edges from cfgData (kept in state so dragging works).
+  useEffect(() => {
+    if (!showCFG) return
+    if (!cfgData || (cfgData as any)?.status === 'analyzing') return
+
+    const nodesRaw = Array.isArray((cfgData as any)?.nodes) ? (cfgData as any).nodes : []
+    const edgesRaw = Array.isArray((cfgData as any)?.edges) ? (cfgData as any).edges : []
+
+    const rootId = String((cfgData as any)?.root || cfgRootId || selected || '')
+
+    // adjacency
+    const children = new Map<string, string[]>()
+    for (const e of edgesRaw) {
+      const a = String(e.from)
+      const b = String(e.to)
+      const arr = children.get(a) || []
+      arr.push(b)
+      children.set(a, arr)
+    }
+
+    // depth from root
+    const depthById = new Map<string, number>()
+    if (rootId) depthById.set(rootId, 0)
+    const q: string[] = rootId ? [rootId] : []
+    while (q.length) {
+      const cur = q.shift()!
+      const d = depthById.get(cur) ?? 0
+      if (d >= cfgDepth) continue
+      for (const nxt of children.get(cur) || []) {
+        if (!depthById.has(nxt)) {
+          depthById.set(nxt, d + 1)
+          q.push(nxt)
+        }
+      }
+    }
+
+    const byDepth = new Map<number, string[]>()
+    for (const n of nodesRaw) {
+      const id = String(n.id)
+      const d = depthById.get(id) ?? 999
+      const arr = byDepth.get(d) || []
+      arr.push(id)
+      byDepth.set(d, arr)
+    }
+    for (const arr of byDepth.values()) arr.sort()
+
+    const positions = new Map<string, { x: number; y: number }>()
+    const XGAP = 360
+    const YGAP = 220
+    const depths = Array.from(byDepth.keys()).sort((a, b) => a - b)
+    for (const d0 of depths) {
+      const ids = byDepth.get(d0) || []
+      const d = d0 === 999 ? cfgDepth + 1 : d0
+      const center = (ids.length - 1) / 2
+      for (let i = 0; i < ids.length; i++) {
+        positions.set(ids[i], { x: (i - center) * XGAP, y: d * YGAP })
+      }
+    }
+
+    const nextNodes: Node[] = nodesRaw.map((n: any) => {
+      const id = String(n.id)
+      const title = `${displayName(id)}`
+      const sj = typeof n.summary_ja === 'string' ? n.summary_ja.trim() : ''
+      const hasSummary = Boolean(sj)
+      return {
+        id,
+        type: 'cfgNode',
+        position: positions.get(id) || { x: 0, y: 0 },
+        data: { title, summary: hasSummary ? sj : '(no summary)', hasSummary },
+      }
+    })
+
+    const nextEdges: Edge[] = edgesRaw.map((e: any, i: number) => ({
+      id: `e-${i}-${e.from}-${e.to}`,
+      source: String(e.from),
+      target: String(e.to),
+      animated: false,
+      style: { stroke: 'rgba(255,255,255,0.35)' },
+    }))
+
+    setCfgNodes(nextNodes)
+    setCfgEdges(nextEdges)
+  }, [showCFG, cfgData, cfgRootId, selected, cfgDepth, index])
 
   async function loadGhidraDecomp(id: string, fid: string) {
     try {
@@ -3192,119 +3289,36 @@ export default function App() {
               ) : !cfgData || (cfgData as any)?.status === 'analyzing' ? (
                 <div className='secondary' style={{ padding: 20 }}>No graph data yet.</div>
               ) : (
-                (() => {
-                  const nodesRaw = Array.isArray((cfgData as any)?.nodes) ? (cfgData as any).nodes : []
-                  const edgesRaw = Array.isArray((cfgData as any)?.edges) ? (cfgData as any).edges : []
-
-                  // simple layout: BFS layers by depth, stagger vertically
-                  const rootId = String((cfgData as any)?.root || cfgRootId || selected || '')
-                  const children = new Map<string, string[]>()
-                  for (const e of edgesRaw) {
-                    const a = String(e.from)
-                    const b = String(e.to)
-                    const arr = children.get(a) || []
-                    arr.push(b)
-                    children.set(a, arr)
-                  }
-
-                  const depthById = new Map<string, number>()
-                  if (rootId) depthById.set(rootId, 0)
-                  const q: string[] = rootId ? [rootId] : []
-                  while (q.length) {
-                    const cur = q.shift()!
-                    const d = depthById.get(cur) ?? 0
-                    if (d >= 3) continue
-                    for (const nxt of children.get(cur) || []) {
-                      if (!depthById.has(nxt)) {
-                        depthById.set(nxt, d + 1)
-                        q.push(nxt)
+                <div style={{ width: '100%', height: '100%' }}>
+                  <ReactFlow
+                    nodes={cfgNodes}
+                    edges={cfgEdges}
+                    nodeTypes={{ cfgNode: CFGNode }}
+                    onNodesChange={(changes) => setCfgNodes((nds) => applyNodeChanges(changes, nds))}
+                    onEdgesChange={(changes) => setCfgEdges((eds) => applyEdgeChanges(changes, eds))}
+                    fitView
+                    fitViewOptions={{ padding: 0.2 }}
+                    onInit={(rf) => {
+                      try {
+                        const root = cfgRootId || selected
+                        if (root) rf.fitView({ nodes: [{ id: root } as any], padding: 0.2 })
+                        else rf.fitView({ padding: 0.2 })
+                      } catch {
+                        // ignore
                       }
-                    }
-                  }
-
-                  const byDepth = new Map<number, string[]>()
-                  for (const n of nodesRaw) {
-                    const id = String(n.id)
-                    const d = depthById.get(id) ?? 999
-                    const arr = byDepth.get(d) || []
-                    arr.push(id)
-                    byDepth.set(d, arr)
-                  }
-                  for (const arr of byDepth.values()) arr.sort()
-
-                  const positions = new Map<string, { x: number; y: number }>()
-                  // top-down layout: depth increases downward (y), centered pyramid per depth
-                  const XGAP = 360
-                  const YGAP = 220
-                  const depths = Array.from(byDepth.keys()).sort((a, b) => a - b)
-                  for (const d0 of depths) {
-                    const ids = byDepth.get(d0) || []
-                    const d = d0 === 999 ? 4 : d0
-                    const center = (ids.length - 1) / 2
-                    for (let i = 0; i < ids.length; i++) {
-                      positions.set(ids[i], { x: (i - center) * XGAP, y: d * YGAP })
-                    }
-                  }
-
-                  const rfNodes: Node[] = nodesRaw.map((n: any) => {
-                    const id = String(n.id)
-                    const title = `${displayName(id)}`
-                    const sj = typeof n.summary_ja === 'string' ? n.summary_ja.trim() : ''
-                    const hasSummary = Boolean(sj)
-                    return {
-                      id,
-                      type: 'cfgNode',
-                      position: positions.get(id) || { x: 0, y: 0 },
-                      data: {
-                        title,
-                        summary: hasSummary ? sj : '(no summary)',
-                        hasSummary,
-                      },
-                      draggable: true,
-                    }
-                  })
-
-                  const rfEdges: Edge[] = edgesRaw.map((e: any, i: number) => ({
-                    id: `e-${i}-${e.from}-${e.to}`,
-                    source: String(e.from),
-                    target: String(e.to),
-                    animated: false,
-                    style: { stroke: 'rgba(255,255,255,0.35)' },
-                  }))
-
-                  return (
-                    <div style={{ width: '100%', height: '100%' }}>
-                      <ReactFlow
-                        nodes={rfNodes}
-                        edges={rfEdges}
-                        nodeTypes={{ cfgNode: CFGNode }}
-                        fitView
-                        fitViewOptions={{ padding: 0.2 }}
-                        onInit={(rf) => {
-                          // Center view on root node on open.
-                          try {
-                            if (rootId) rf.fitView({ nodes: [{ id: rootId } as any], padding: 0.2 })
-                            else rf.fitView({ padding: 0.2 })
-                          } catch {
-                            // ignore
-                          }
-                        }}
-                        onNodeClick={(_, node) => {
-                          const fid = String(node.id)
-                          // Update underlying panes
-                          navigateTo(fid)
-                          // And re-root the CFG modal to the clicked node
-                          setCfgRootId(fid)
-                          if (jobId) loadCFG(jobId, fid, cfgDepth)
-                        }}
-                      >
-                        <MiniMap nodeColor={() => 'rgba(255,255,255,0.18)'} maskColor='rgba(0,0,0,0.5)' />
-                        <Controls />
-                        <Background gap={18} size={1} color='rgba(255,255,255,0.08)' />
-                      </ReactFlow>
-                    </div>
-                  )
-                })()
+                    }}
+                    onNodeClick={(_, node) => {
+                      const fid = String(node.id)
+                      navigateTo(fid)
+                      setCfgRootId(fid)
+                      if (jobId) loadCFG(jobId, fid, cfgDepth)
+                    }}
+                  >
+                    <MiniMap nodeColor={() => 'rgba(255,255,255,0.18)'} maskColor='rgba(0,0,0,0.5)' />
+                    <Controls />
+                    <Background gap={18} size={1} color='rgba(255,255,255,0.08)' />
+                  </ReactFlow>
+                </div>
               )}
             </div>
           </div>
