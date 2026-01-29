@@ -3875,7 +3875,18 @@ export default function App() {
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                      <div style={{ fontFamily: 'monospace', color: 'rgba(255,255,255,0.9)' }}>{s.addr}</div>
+                      <div
+                        style={{
+                          fontFamily: 'monospace',
+                          color: '#fbbf24',
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                        }}
+                        onClick={() => setMemoryAddr(s.addr)}
+                        title='Open in Memory View'
+                      >
+                        {s.addr}
+                      </div>
                       <div className='secondary' style={{ fontSize: 12 }}>
                         {s.len != null ? `${s.len} chars` : ''} {s.type ? `• ${s.type}` : ''}
                       </div>
