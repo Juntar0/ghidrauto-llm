@@ -3882,7 +3882,10 @@ export default function App() {
                           cursor: 'pointer',
                           textDecoration: 'underline',
                         }}
-                        onClick={() => setMemoryAddr(s.addr)}
+                        onClick={() => {
+                          setMemoryAddr(s.addr)
+                          setShowMemory(true)
+                        }}
                         title='Open in Memory View'
                       >
                         {s.addr}
