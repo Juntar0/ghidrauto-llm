@@ -50,12 +50,19 @@ def memory_view(job_id: str, addr: str, length: int) -> dict[str, Any]:
     out_json = paths["extract"] / f"mem_{va:016x}_{ln}.json"
     log_path = paths["extract"] / "peekmem.log"
 
-    # Don't specify -process: let Ghidra pick the single program in the project.
+    # Get program name from meta.json
+    meta_path = paths["base"] / "meta.json"
+    meta = read_json(meta_path, {})
+    program_name = meta.get("original_name", "sample.exe")
+
+    # -process: specify program name so currentProgram is set.
     # -noanalysis skips heavy re-analysis; script just reads memory.
     cmd = [
         settings.ghidra_analyze_headless,
         str(project_root),
         project_name,
+        "-process",
+        program_name,
         "-noanalysis",
         "-scriptPath",
         settings.ghidra_scripts_dir,
