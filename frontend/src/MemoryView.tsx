@@ -17,6 +17,13 @@ type MemoryResp = {
   error?: string | null
 }
 
+type ModalPosition = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 function parseHexVa(s: string): number | null {
   const t = (s || '').trim().toLowerCase().replace(/_/g, '')
   const x = t.startsWith('0x') ? t.slice(2) : t
@@ -69,6 +76,33 @@ export default function MemoryView(props: {
   const [anchor, setAnchor] = useState<number | null>(null)
   const [sel, setSel] = useState<{ a: number; b: number } | null>(null)
   const dragging = useRef(false)
+
+  // Modal position and resize state
+  const [position, setPosition] = useState<ModalPosition>(() => {
+    const saved = localStorage.getItem('memoryViewPosition')
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch {
+        // fallback to default
+      }
+    }
+    // Default: center of screen
+    const width = 800
+    const height = 600
+    return {
+      x: (window.innerWidth - width) / 2,
+      y: (window.innerHeight - height) / 2,
+      width,
+      height,
+    }
+  })
+
+  const isDraggingModal = useRef(false)
+  const isResizing = useRef(false)
+  const dragStart = useRef({ x: 0, y: 0 })
+  const resizeStart = useRef({ x: 0, y: 0, width: 0, height: 0 })
+  const modalRef = useRef<HTMLDivElement>(null)
 
   const bytes = useMemo(() => {
     if (!resp?.bytes_b64) return null
@@ -123,6 +157,81 @@ export default function MemoryView(props: {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Save position to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('memoryViewPosition', JSON.stringify(position))
+  }, [position])
+
+  // Modal drag handlers
+  const onHeaderMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return // left click only
+    e.preventDefault()
+    e.stopPropagation()
+    isDraggingModal.current = true
+    dragStart.current = {
+      x: e.clientX - position.x,
+      y: e.clientY - position.y,
+    }
+  }
+
+  // Resize handle handlers
+  const onResizeMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    isResizing.current = true
+    resizeStart.current = {
+      x: e.clientX,
+      y: e.clientY,
+      width: position.width,
+      height: position.height,
+    }
+  }
+
+  // Global mouse move and up handlers
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (isDraggingModal.current) {
+        const newX = e.clientX - dragStart.current.x
+        const newY = e.clientY - dragStart.current.y
+        setPosition((prev) => ({
+          ...prev,
+          x: newX,
+          y: newY,
+        }))
+      } else if (isResizing.current) {
+        const deltaX = e.clientX - resizeStart.current.x
+        const deltaY = e.clientY - resizeStart.current.y
+        const newWidth = Math.max(
+          600,
+          Math.min(window.innerWidth * 0.9, resizeStart.current.width + deltaX)
+        )
+        const newHeight = Math.max(
+          400,
+          Math.min(window.innerHeight * 0.9, resizeStart.current.height + deltaY)
+        )
+        setPosition((prev) => ({
+          ...prev,
+          width: newWidth,
+          height: newHeight,
+        }))
+      }
+    }
+
+    const onMouseUpGlobal = () => {
+      isDraggingModal.current = false
+      isResizing.current = false
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUpGlobal)
+
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUpGlobal)
+    }
+  }, [position])
 
   const rows = useMemo(() => {
     if (!bytes || baseVa == null) return []
@@ -208,8 +317,27 @@ export default function MemoryView(props: {
 
   return (
     <div className='memModal' onMouseUp={onMouseUp}>
-      <div className='memModalInner'>
-        <div className='memHeader'>
+      <div
+        ref={modalRef}
+        className='memModalInner'
+        style={{
+          position: 'absolute',
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          width: `${position.width}px`,
+          height: `${position.height}px`,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div
+          className='memHeader'
+          onMouseDown={onHeaderMouseDown}
+          style={{
+            cursor: isDraggingModal.current ? 'grabbing' : 'grab',
+            userSelect: 'none',
+          }}
+        >
           <div className='memTitle'>Memory View</div>
           <div className='memTools'>
             <span className='memMeta'>job: {jobId.slice(0, 8)}…</span>
@@ -257,7 +385,7 @@ export default function MemoryView(props: {
           )}
         </div>
 
-        <div className='memBody'>
+        <div className='memBody' style={{ flex: 1, overflow: 'auto' }}>
           <div className='memTable'>
             {rows.map((r) => (
               <div key={r.row} className='memRow'>
@@ -311,6 +439,21 @@ export default function MemoryView(props: {
             </div>
           </div>
         )}
+
+        {/* Resize handle */}
+        <div
+          onMouseDown={onResizeMouseDown}
+          style={{
+            position: 'absolute',
+            right: 0,
+            bottom: 0,
+            width: '20px',
+            height: '20px',
+            cursor: 'nwse-resize',
+            background: 'linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.3) 50%)',
+            userSelect: 'none',
+          }}
+        />
       </div>
     </div>
   )
