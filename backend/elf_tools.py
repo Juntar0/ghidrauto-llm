@@ -63,7 +63,7 @@ def read_elf_info(path: str | Path) -> dict[str, Any]:
         info = ElfInfo(
             path=str(p),
             elfclass=str(ef.elfclass) if getattr(ef, "elfclass", None) else None,
-            endian=str(getattr(ef, "little_endian", None)),
+            endian=("little" if getattr(ef, "little_endian", None) is True else "big" if getattr(ef, "little_endian", None) is False else None),
             machine=str(hdr.get("e_machine")),
             etype=etype,
             entry=_hex(int(hdr.get("e_entry")) if hdr.get("e_entry") is not None else None),
