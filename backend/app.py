@@ -1511,8 +1511,15 @@ async def chat(req: ChatRequest):
                 ctx += f"\n⚠️ WARNING: Approaching step limit ({session['step_count']}/{MAX_STEPS}). Prioritize critical investigations."
             return ctx
 
+        # Run a bounded number of ReAct steps per HTTP request to avoid proxy/gateway timeouts.
+        # (Some environments return HTTP 504 if a single request takes too long.)
+        req_start = time.time()
+        MAX_SECONDS_PER_REQUEST = 20
+        MAX_REACT_ITERS_PER_REQUEST = 4
+        iters = 0
+
         # Run up to remaining steps in this request until verifier says done
-        while session["step_count"] < MAX_STEPS:
+        while session["step_count"] < MAX_STEPS and iters < MAX_REACT_ITERS_PER_REQUEST and (time.time() - req_start) < MAX_SECONDS_PER_REQUEST:
             # ===== Planner =====
             planner_prompt = SYSTEM_PROMPT_REACT_PLANNER + "\n\n" + TOOL_DESCRIPTIONS + _state_context()
             planner_messages = [
@@ -1564,6 +1571,7 @@ async def chat(req: ChatRequest):
 
             all_tool_results.extend(step_tool_results)
             session["step_count"] += 1
+            iters += 1
 
             # ===== Verifier =====
             verifier_prompt = SYSTEM_PROMPT_REACT_VERIFIER + "\n\n" + TOOL_DESCRIPTIONS + _state_context()
@@ -1654,6 +1662,11 @@ Do NOT fabricate. Only use information from tool results above."""
             "max_steps": MAX_STEPS,
             "active_function_id": session.get("active_function_id"),
             "react_trace": debug_trace,
+            "request_limits": {
+                "max_seconds": MAX_SECONDS_PER_REQUEST,
+                "max_react_iters": MAX_REACT_ITERS_PER_REQUEST,
+            },
+            "request_truncated": (iters >= MAX_REACT_ITERS_PER_REQUEST) or ((time.time() - req_start) >= MAX_SECONDS_PER_REQUEST),
         }
 
         return {
