@@ -890,13 +890,30 @@ export default function App() {
 
   const nameToId = useMemo(() => {
     const m = new Map<string, string>()
-    for (const f of functions) {
-      if (f.name) m.set(String(f.name).toLowerCase(), f.id)
-      // also map id itself (helps with names like "entry")
-      if (f.id) m.set(String(f.id).toLowerCase(), f.id)
+
+    const norm = (s: any) => String(s ?? '').trim().toLowerCase()
+    const stripTemplate = (s: string) => s.replace(/<[^>\n]{1,120}>/g, '')
+
+    for (const f of functions as any[]) {
+      const fid = String(f.id || '')
+      const nm = String(f.name || '')
+
+      // map declared name + id
+      if (nm) m.set(norm(nm), f.id)
+      if (fid) m.set(norm(fid), f.id)
+
+      // also map template-stripped variants (helps when syntax highlighting splits "<T>" into separate nodes)
+      if (nm && nm.includes('<')) m.set(norm(stripTemplate(nm)), f.id)
+      if (fid && fid.includes('<')) m.set(norm(stripTemplate(fid)), f.id)
+
+      // also map AI-proposed name (so linkification works even after rename)
+      const proposed = index[f.id]?.proposed_name
+      if (proposed) m.set(norm(proposed), f.id)
+      if (proposed && String(proposed).includes('<')) m.set(norm(stripTemplate(String(proposed))), f.id)
     }
+
     return m
-  }, [functions])
+  }, [functions, index])
 
   const entryFunctionId = useMemo(() => {
     const df = analysis?.ui?.default_function_id
