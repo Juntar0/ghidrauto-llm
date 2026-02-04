@@ -1800,6 +1800,16 @@ export default function App() {
 
     setSelected(fid)
 
+    // Scroll sidebar function list to the selected function (best-effort)
+    window.setTimeout(() => {
+      try {
+        const el = document.getElementById(`fn-${fid}`)
+        el?.scrollIntoView({ block: 'center' })
+      } catch {
+        // ignore
+      }
+    }, 0)
+
     setNavHistory((prev) => {
       const base = navPos >= 0 ? prev.slice(0, navPos + 1) : prev
       // de-dupe consecutive
@@ -2207,6 +2217,8 @@ export default function App() {
                 return (
                   <div
                     key={f.id}
+                    id={`fn-${f.id}`}
+                    data-fid={f.id}
                     className={`fnItem ${selected === f.id ? 'fnItemSelected' : ''}`}
                     onClick={() => {
                       navigateTo(f.id)
