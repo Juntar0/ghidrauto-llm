@@ -386,7 +386,25 @@ async def get_memory_view(job_id: str, addr: str = Query(...), len: int = Query(
 
 @app.get("/api/jobs/{job_id}/exports")
 async def get_exports(job_id: str, limit: int = Query(200, ge=1, le=1000)):
-    """List PE exports for the uploaded binary (DLL entrypoints)."""
+    """List PE exports for the uploaded binary (DLL entrypoints).
+
+    Enhancements:
+    - Adds best-effort VA (image_base + RVA) if analysis.json is available.
+    - Adds best-effort function_id resolution for each export by matching VA to
+      function entry or function range.
+    """
+
+    def _parse_hex(s: str | None) -> int | None:
+        if not s:
+            return None
+        try:
+            t = str(s).strip().lower()
+            if t.startswith("0x"):
+                return int(t, 16)
+            return int(t, 10)
+        except Exception:
+            return None
+
     inp = Path(settings.work_dir) / job_id / "input"
     if not inp.exists():
         raise HTTPException(404, "input not found")
@@ -400,6 +418,55 @@ async def get_exports(job_id: str, limit: int = Query(200, ge=1, le=1000)):
         data = parse_pe_exports(pe_path, limit=int(limit))
         data["job_id"] = job_id
         data["path"] = str(pe_path)
+
+        # Best-effort export RVA -> VA -> function_id resolution using analysis.json
+        ap = _analysis_path(job_id)
+        analysis = read_json(ap, {}) if ap.exists() else {}
+        img_base = _parse_hex(((analysis.get("sample") or {}).get("image_base")))
+        funcs = analysis.get("functions") or []
+
+        # Build fast maps
+        entry_map: dict[int, str] = {}
+        ranges: list[tuple[int, int, str]] = []  # (start, end_excl, id)
+        for f in funcs:
+            try:
+                fid = str(f.get("id") or f.get("name") or "")
+                ent = _parse_hex(f.get("entry"))
+                sz = f.get("size")
+                if not fid or ent is None:
+                    continue
+                entry_map[ent] = fid
+                if isinstance(sz, int) and sz > 0:
+                    ranges.append((ent, ent + sz, fid))
+            except Exception:
+                continue
+        ranges.sort(key=lambda x: x[0])
+
+        for ex in data.get("exports") or []:
+            rva_i = _parse_hex(ex.get("rva"))
+            if img_base is None or rva_i is None:
+                continue
+            va = img_base + rva_i
+            ex["va"] = f"0x{va:x}"
+
+            # Do not attempt to resolve forwarded exports
+            if ex.get("forwarder"):
+                continue
+
+            fid = entry_map.get(va)
+            if fid:
+                ex["function_id"] = fid
+                ex["function_id_reason"] = "entry_match"
+                continue
+
+            # Range match (best-effort)
+            # linear scan is fine for typical function counts (<50k), but keep it simple
+            for (st, en, fid2) in ranges:
+                if st <= va < en:
+                    ex["function_id"] = fid2
+                    ex["function_id_reason"] = "range_match"
+                    break
+
         return JSONResponse(data)
     except Exception as e:
         raise HTTPException(500, f"export parse error: {e}")

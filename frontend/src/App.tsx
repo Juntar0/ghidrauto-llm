@@ -4175,6 +4175,15 @@ export default function App() {
                       className='fnItem'
                       style={{ cursor: nm ? 'pointer' : 'default' }}
                       onClick={() => {
+                        // Prefer backend-resolved function_id (by RVA/VA) when available.
+                        const resolvedFid = ex?.function_id ? String(ex.function_id) : ''
+                        if (resolvedFid) {
+                          navigateTo(resolvedFid)
+                          setShowExports(false)
+                          return
+                        }
+
+                        // Fallback: name match
                         if (!nm) return
                         const fid = nameToId.get(nm.toLowerCase())
                         if (fid) {
@@ -4182,13 +4191,27 @@ export default function App() {
                           setShowExports(false)
                         }
                       }}
-                      title={nm ? `Click to jump (if function name matches): ${nm}` : ''}
+                      title={
+                        ex?.function_id
+                          ? `Click to jump (resolved by RVA): ${String(ex.function_id)} (${String(ex?.function_id_reason || '')})`
+                          : nm
+                            ? `Click to jump (fallback name match): ${nm}`
+                            : ''
+                      }
                     >
                       <div className='fnMeta'>
-                        <div className='fnName'>{nm || '(no name)'}</div>
+                        <div className='fnName'>
+                          {nm || '(no name)'}
+                          {ex?.function_id ? (
+                            <span className='badge badgeOk' style={{ marginLeft: 10, fontSize: 12 }}>
+                              resolved
+                            </span>
+                          ) : null}
+                        </div>
                         <div className='fnSub'>
                           <span style={{ fontFamily: 'monospace' }}>ord={String(ord ?? '')}</span>
                           <span style={{ marginLeft: 10, fontFamily: 'monospace' }}>rva={rva}</span>
+                          {ex?.va ? <span style={{ marginLeft: 10, fontFamily: 'monospace' }}>va={String(ex.va)}</span> : null}
                           {fwd ? <span style={{ marginLeft: 10, fontFamily: 'monospace' }}>fwd={String(fwd)}</span> : null}
                         </div>
                       </div>
