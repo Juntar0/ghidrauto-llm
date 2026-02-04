@@ -38,7 +38,7 @@ function linkifyHighlightedHtml(
   // - FUN_/sub_ style symbols
   // - 0x... addresses
   // - C/C++ identifiers (also try to catch simple templates / namespaces)
-  const tokenRe = /\b(?:FUN_|thunk_FUN_)([0-9A-Fa-f]+)\b|\b(?:sub|function)_([0-9A-Fa-f]+)\b|\b0x[0-9A-Fa-f]+\b|[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*(?:<[^>\n]{1,60}>)?/g
+  const tokenRe = /\b(?:FUN_|thunk_FUN_)([0-9A-Fa-f]+)\b|\b(?:sub|function)_([0-9A-Fa-f]+)\b|\b(?:PTR_)?DAT_([0-9A-Fa-f]{4,16})\b|\b0x[0-9A-Fa-f]+\b|[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*(?:<[^>\n]{1,60}>)?/g
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   const nodes: Text[] = []
@@ -65,14 +65,20 @@ function linkifyHighlightedHtml(
 
       const addr1 = m[1]
       const addr2 = m[2]
+      const datAddr = m[3]
       if (addr1) {
         const a = addr1.toLowerCase()
         fid = entryAddrToId.get(a) || entryAddrToId.get(`0x${a}`)
       } else if (addr2) {
         const a = addr2.toLowerCase()
         fid = entryAddrToId.get(a) || entryAddrToId.get(`0x${a}`)
+      } else if (datAddr) {
+        memAddr = `0x${datAddr.toLowerCase()}`
       } else if (whole.toLowerCase().startsWith('0x')) {
         memAddr = whole
+      } else if (whole.toLowerCase().startsWith('dat_') || whole.toLowerCase().startsWith('ptr_dat_')) {
+        const hx = whole.replace(/^ptr_/i, '').slice(4)
+        if (/^[0-9a-fA-F]{4,16}$/.test(hx)) memAddr = `0x${hx.toLowerCase()}`
       } else {
         fid = nameToId.get(whole.toLowerCase())
       }
