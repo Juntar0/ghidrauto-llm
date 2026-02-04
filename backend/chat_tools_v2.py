@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .memory_peek import memory_view
+
 
 def get_job_summary(work_dir: str, job_id: str) -> dict[str, Any]:
     """Get high-level job summary (file name, arch, function count, etc.)."""
@@ -280,6 +282,24 @@ def get_artifacts(work_dir: str, job_id: str, artifact_type: str = "all") -> dic
     return result
 
 
+def peek_memory(work_dir: str, job_id: str, addr: str, length: int = 0x200) -> dict[str, Any]:
+    """Peek memory by Virtual Address (VA) via Ghidra headless.
+
+    Args:
+      addr: hex virtual address string (e.g. "0x140003000")
+      length: bytes to read (1..0x4000)
+
+    Returns:
+      {job_id, va, len, bytes_b64, arch, ptr_size, annotations, error}
+
+    Notes:
+      - Requires extract to have created ghidra_project.
+      - bytes are returned as base64; caller can decode/render as hex/ASCII.
+    """
+    # memory_view already enforces length bounds and validates addr
+    return memory_view(job_id=job_id, addr=addr, length=length)
+
+
 def run_ai_decompile(work_dir: str, job_id: str, function_id: str, mode: str = "default") -> dict[str, Any]:
     """Queue AI decompile job (async). Returns job status."""
     # This would trigger the actual worker job
@@ -314,6 +334,7 @@ TOOL_REGISTRY = {
     "get_function_code": get_function_code,
     "get_xrefs": get_xrefs,
     "get_callgraph": get_callgraph,
+    "peek_memory": peek_memory,
     "get_pe_map": get_pe_map,
     "get_artifacts": get_artifacts,
     "run_ai_decompile": run_ai_decompile,
@@ -363,17 +384,24 @@ TOOL_DESCRIPTIONS = """
    - Returns: `{"nodes": [...], "depth": 2}`
    - GUARD: Max depth=2 enforced
 
-7-8. **get_pe_map / get_artifacts** (placeholders, not yet implemented)
+7. **peek_memory**
+   - Purpose: Read raw bytes at a Virtual Address (VA) using Ghidra headless (Memory View)
+   - Args: `{"addr": "0x140003000", "length": 256}` (length: 1..0x4000)
+   - Returns: `{ "va": "0x...", "len": 256, "bytes_b64": "...", "arch": "...", "ptr_size": 8, "annotations": {...} }`
+   - Use when: Need to verify pointers/structures/strings referenced by VA in decompiler output
+   - GUARD: addr must be hex VA; length max 0x4000
+
+8-9. **get_pe_map / get_artifacts** (placeholders, not yet implemented)
 
 ### Action Tools
 
-9. **run_ai_decompile**
+10. **run_ai_decompile**
    - Purpose: Queue AI decompilation for a function
    - Args: `{"function_id": "FUN_00401000", "mode": "default"}`
    - Returns: `{"status": "queued", "function_id": "..."}`
    - Use when: User asks to "run AI" or "analyze with AI"
 
-10. **save_annotation**
+11. **save_annotation**
     - Purpose: Save user notes/hypotheses
     - Args: `{"target": "FUN_00401000", "content": "This looks like WinMain"}`
     - Returns: `{"status": "saved", "target": "..."}`
