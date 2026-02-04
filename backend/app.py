@@ -748,7 +748,22 @@ def _read_file_cached(path: Path) -> bytes:
 
 @app.get("/api/jobs/{job_id}/functions/{function_id}/disasm")
 async def get_disasm(job_id: str, function_id: str):
+    """Return extracted disassembly for a function.
+
+    Note: Ghidra export filenames are sanitized in ExtractAnalysis.java, so we also
+    try a sanitized fallback here.
+    """
     p = Path(settings.work_dir) / job_id / "extract" / "disasm" / f"{function_id}.txt"
+    if not p.exists():
+        try:
+            import re
+
+            safe = re.sub(r"[^A-Za-z0-9_\-\.]", "_", str(function_id))
+            p2 = Path(settings.work_dir) / job_id / "extract" / "disasm" / f"{safe}.txt"
+            if p2.exists():
+                p = p2
+        except Exception:
+            pass
     if not p.exists():
         raise HTTPException(404, "disasm not found")
     data = _read_file_cached(p)
@@ -757,7 +772,22 @@ async def get_disasm(job_id: str, function_id: str):
 
 @app.get("/api/jobs/{job_id}/functions/{function_id}/ghidra")
 async def get_ghidra_decompile(job_id: str, function_id: str):
+    """Return extracted Ghidra decompile output for a function.
+
+    Note: Ghidra export filenames are sanitized in ExtractAnalysis.java, so we also
+    try a sanitized fallback here.
+    """
     p = Path(settings.work_dir) / job_id / "extract" / "decomp" / f"{function_id}.c"
+    if not p.exists():
+        try:
+            import re
+
+            safe = re.sub(r"[^A-Za-z0-9_\-\.]", "_", str(function_id))
+            p2 = Path(settings.work_dir) / job_id / "extract" / "decomp" / f"{safe}.c"
+            if p2.exists():
+                p = p2
+        except Exception:
+            pass
     if not p.exists():
         raise HTTPException(404, "ghidra decompile not found")
     data = _read_file_cached(p)
