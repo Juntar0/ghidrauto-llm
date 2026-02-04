@@ -1189,8 +1189,8 @@ async def chat(req: ChatRequest):
     session = chat_sessions[job_id]
     session["last_updated"] = time.time()
 
-    # GUARD 2: Step limit (max 12 ReAct iterations per session)
-    MAX_STEPS = 12
+    # GUARD 2: Step limit (max 200 ReAct iterations per session)
+    MAX_STEPS = 200
     if session["step_count"] >= MAX_STEPS:
         return {
             "job_id": job_id,
