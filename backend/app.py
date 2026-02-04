@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import sys
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -126,6 +127,83 @@ def _write_job_meta(
         pass
 
 
+# -----------------
+# Zip (infected) auto-extract helper
+# -----------------
+
+def _safe_zip_members(zf: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+    """Return a safe list of members (no dirs, no traversal)."""
+    members: list[zipfile.ZipInfo] = []
+    for info in zf.infolist():
+        name = info.filename
+        if not name or name.endswith("/"):
+            continue
+        p = Path(name)
+        if p.is_absolute() or ".." in p.parts:
+            continue
+        members.append(info)
+    return members
+
+
+def _extract_zip_pick_pe(
+    *,
+    src_zip: Path,
+    out_dir: Path,
+    password: str = "infected",
+    max_members: int = 50,
+    max_total_uncompressed: int = 200 * 1024 * 1024,
+) -> tuple[Path, str]:
+    """Extract a (possibly passworded) zip and pick the first PE inside.
+
+    Password convention: 'infected'
+    Returns: (path_to_extracted_pe, original_member_name)
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if not zipfile.is_zipfile(src_zip):
+        raise ValueError("not a zip")
+
+    with zipfile.ZipFile(src_zip, "r") as zf:
+        members = _safe_zip_members(zf)
+        if not members:
+            raise ValueError("zip has no files")
+        if len(members) > max_members:
+            members = members[:max_members]
+
+        total = 0
+        for info in members:
+            total += int(info.file_size or 0)
+            if total > max_total_uncompressed:
+                raise ValueError("zip too large")
+
+        extracted_paths: list[tuple[Path, str]] = []
+
+        def _extract_one(info: zipfile.ZipInfo, *, pwd: bytes | None) -> Path:
+            dst = out_dir / fs_safe_name(Path(info.filename).name)
+            with zf.open(info, pwd=pwd) as src, open(dst, "wb") as out:
+                out.write(src.read())
+            return dst
+
+        pwd_bytes: bytes | None = None
+        for info in members:
+            try:
+                p = _extract_one(info, pwd=pwd_bytes)
+                extracted_paths.append((p, info.filename))
+            except RuntimeError:
+                if pwd_bytes is None:
+                    pwd_bytes = password.encode("utf-8")
+                    p = _extract_one(info, pwd=pwd_bytes)
+                    extracted_paths.append((p, info.filename))
+                else:
+                    raise
+
+        for p, member_name in extracted_paths:
+            if looks_like_pe(p):
+                return p, member_name
+
+    raise ValueError("no PE file found in zip")
+
+
 @app.post("/api/jobs")
 async def create_job_upload(
     background: BackgroundTasks,
@@ -138,15 +216,32 @@ async def create_job_upload(
     data = await file.read()
     tmp_path.write_bytes(data)
 
-    if not looks_like_pe(tmp_path):
+    source_type = "upload"
+    original_name = file.filename
+    sample_path = tmp_path
+
+    # Auto-extract passworded zip (password: infected)
+    if zipfile.is_zipfile(tmp_path):
+        try:
+            extracted_dir = tmp / (fs_safe_name(file.filename) + "_extracted")
+            sample_path, original_name = _extract_zip_pick_pe(
+                src_zip=tmp_path,
+                out_dir=extracted_dir,
+                password="infected",
+            )
+            source_type = "upload_zip"
+        except Exception as e:
+            raise HTTPException(400, f"zip extract failed: {e}")
+
+    if not looks_like_pe(sample_path):
         raise HTTPException(400, "not a PE file")
 
-    job_id = sha256_file(tmp_path)
+    job_id = sha256_file(sample_path)
     paths = _job_paths(job_id)
-    dest = paths["input"] / fs_safe_name(file.filename)
-    dest.write_bytes(data)
+    dest = paths["input"] / fs_safe_name(Path(original_name).name)
+    dest.write_bytes(sample_path.read_bytes())
 
-    _write_job_meta(job_id=job_id, source_type="upload", source_path=None, original_name=file.filename)
+    _write_job_meta(job_id=job_id, source_type=source_type, source_path=None, original_name=original_name)
 
     _spawn_extract(job_id, dest)
 
@@ -159,16 +254,33 @@ async def create_job_by_path(background: BackgroundTasks, path: str = Form(...))
     if not p.exists() or not p.is_file():
         raise HTTPException(400, "path not found")
 
-    if not looks_like_pe(p):
+    source_type = "path"
+    original_name = p.name
+    sample_path = p
+
+    # Auto-extract passworded zip (password: infected)
+    if zipfile.is_zipfile(p):
+        try:
+            extracted_dir = Path(settings.work_dir) / ".uploads" / (fs_safe_name(p.name) + "_extracted")
+            sample_path, original_name = _extract_zip_pick_pe(
+                src_zip=p,
+                out_dir=extracted_dir,
+                password="infected",
+            )
+            source_type = "path_zip"
+        except Exception as e:
+            raise HTTPException(400, f"zip extract failed: {e}")
+
+    if not looks_like_pe(sample_path):
         raise HTTPException(400, "not a PE file")
 
-    job_id = sha256_file(p)
+    job_id = sha256_file(sample_path)
     paths = _job_paths(job_id)
-    dest = paths["input"] / fs_safe_name(p.name)
+    dest = paths["input"] / fs_safe_name(Path(original_name).name)
     if not dest.exists():
-        dest.write_bytes(p.read_bytes())
+        dest.write_bytes(sample_path.read_bytes())
 
-    _write_job_meta(job_id=job_id, source_type="path", source_path=str(p), original_name=p.name)
+    _write_job_meta(job_id=job_id, source_type=source_type, source_path=str(p), original_name=original_name)
 
     _spawn_extract(job_id, dest)
 
