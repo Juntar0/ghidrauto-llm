@@ -2413,7 +2413,7 @@ export default function App() {
               disabled={!analysis?.ui?.default_function_id}
               title='Jump to entrypoint-based candidate (DLL: DllMain candidate)'
             >
-              DllMain候補へ
+              DllMain Candidate
             </button>
 
             {/* moved to Settings */}
