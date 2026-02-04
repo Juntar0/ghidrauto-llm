@@ -947,7 +947,47 @@ def process_request(s: Settings, req: dict) -> None:
             "enqueued_at": req.get("enqueued_at"),
         },
     )
-    disasm_path = base / "extract" / "disasm" / f"{fid}.txt"
+    def _resolve_extracted_path(base_dir: Path, subdir: str, fid_in: str, ext: str) -> Path:
+        """Resolve extracted artifact path for a function.
+
+        Filenames are sanitized by the Ghidra extraction script and may have minor variations
+        (e.g., trailing underscores, double underscores).
+        """
+        d = base_dir / "extract" / subdir
+        p0 = d / f"{fid_in}{ext}"
+        if p0.exists():
+            return p0
+        try:
+            import re
+
+            safe = re.sub(r"[^A-Za-z0-9_\-\.]", "_", fid_in)
+            cands = [
+                safe,
+                safe.rstrip("_"),
+                safe.rstrip("_") + "_",
+                safe.rstrip("_") + "__",
+                re.sub(r"_+", "_", safe),
+                re.sub(r"_+", "_", safe).rstrip("_"),
+            ]
+            seen = set()
+            for s in cands:
+                if not s or s in seen:
+                    continue
+                seen.add(s)
+                p = d / f"{s}{ext}"
+                if p.exists():
+                    return p
+            # last resort: scan dir
+            cand_l = {s.lower() for s in seen if s}
+            if d.exists():
+                for fp in d.iterdir():
+                    if fp.is_file() and fp.suffix.lower() == ext.lower() and fp.stem.lower() in cand_l:
+                        return fp
+        except Exception:
+            pass
+        return p0
+
+    disasm_path = _resolve_extracted_path(base, "disasm", fid, ".txt")
     idx_path = base / "ai" / "index.json"
 
     out_path = (base / "ai" / "summaries" / f"{fid}.json") if is_summary_task else (base / "ai" / "results" / f"{fid}.json")
