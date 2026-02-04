@@ -1150,6 +1150,19 @@ async def stream(job_id: str):
     return EventSourceResponse(gen())
 
 
+@app.get("/api/jobs/{job_id}/index")
+async def get_ai_index(job_id: str):
+    """Return current ai/index.json (polling-friendly fallback for SSE)."""
+    idxp = Path(settings.work_dir) / job_id / "ai" / "index.json"
+    if not idxp.exists():
+        return JSONResponse({})
+    try:
+        return JSONResponse(json.loads(idxp.read_text(encoding="utf-8")))
+    except Exception:
+        # best-effort: return empty if corrupted/partial write
+        return JSONResponse({})
+
+
 @app.get("/api/debug/settings")
 async def debug_settings():
     """Expose safe runtime settings (no secrets) for UI debugging."""

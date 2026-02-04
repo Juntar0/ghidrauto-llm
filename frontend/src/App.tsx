@@ -34,7 +34,11 @@ function linkifyHighlightedHtml(
   const root = document.createElement('div')
   root.innerHTML = html
 
-  const tokenRe = /\b(?:FUN_|thunk_FUN_)([0-9A-Fa-f]+)\b|\b(?:sub|function)_([0-9A-Fa-f]+)\b|\b0x[0-9A-Fa-f]+\b|\b[A-Za-z_][A-Za-z0-9_]*\b/g
+  // Token patterns for linkification.
+  // - FUN_/sub_ style symbols
+  // - 0x... addresses
+  // - C/C++ identifiers (also try to catch simple templates / namespaces)
+  const tokenRe = /\b(?:FUN_|thunk_FUN_)([0-9A-Fa-f]+)\b|\b(?:sub|function)_([0-9A-Fa-f]+)\b|\b0x[0-9A-Fa-f]+\b|[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*(?:<[^>\n]{1,60}>)?/g
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   const nodes: Text[] = []
@@ -165,6 +169,10 @@ const apiBase = ''
 function useSSE(jobId: string | null, onIndex: (index: Record<string, IndexEntry>) => void) {
   useEffect(() => {
     if (!jobId) return
+
+    let stopped = false
+
+    // SSE (preferred)
     const es = new EventSource(`${apiBase}/api/jobs/${jobId}/stream`)
     es.addEventListener('function_status', (ev: MessageEvent) => {
       try {
@@ -176,7 +184,33 @@ function useSSE(jobId: string | null, onIndex: (index: Record<string, IndexEntry
     es.onerror = () => {
       // keep it; browser will retry
     }
-    return () => es.close()
+
+    // Polling fallback (helps when SSE is blocked by proxies/network settings)
+    const poll = async () => {
+      if (stopped) return
+      try {
+        const r = await fetch(`${apiBase}/api/jobs/${jobId}/index`)
+        if (!r.ok) return
+        const j = await r.json().catch(() => null)
+        if (j && typeof j === 'object') onIndex(j as any)
+      } catch {
+        // ignore
+      }
+    }
+
+    // do one immediate poll + periodic
+    poll()
+    const t = window.setInterval(poll, 4000)
+
+    return () => {
+      stopped = true
+      try {
+        es.close()
+      } catch {
+        // ignore
+      }
+      window.clearInterval(t)
+    }
   }, [jobId, onIndex])
 }
 
