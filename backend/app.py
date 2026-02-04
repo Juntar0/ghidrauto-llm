@@ -26,6 +26,7 @@ from .memory_peek import memory_view
 import shutil
 import subprocess
 from .pecheck import looks_like_pe
+from .elfcheck import looks_like_elf
 from .storage import (
     ensure_job_dirs,
     fs_safe_name,
@@ -147,7 +148,7 @@ def _safe_zip_members(zf: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     return members
 
 
-def _extract_zip_pick_pe(
+def _extract_zip_pick_sample(
     *,
     src_zip: Path,
     out_dir: Path,
@@ -155,10 +156,11 @@ def _extract_zip_pick_pe(
     max_members: int = 50,
     max_total_uncompressed: int = 200 * 1024 * 1024,
 ) -> tuple[Path, str]:
-    """Extract a (possibly passworded) zip and pick the first PE inside.
+    """Extract a (possibly passworded) zip and pick the first supported sample inside.
 
+    Currently supported: PE, ELF
     Password convention: 'infected'
-    Returns: (path_to_extracted_pe, original_member_name)
+    Returns: (path_to_extracted_sample, original_member_name)
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -200,10 +202,10 @@ def _extract_zip_pick_pe(
                     raise
 
         for p, member_name in extracted_paths:
-            if looks_like_pe(p):
+            if looks_like_pe(p) or looks_like_elf(p):
                 return p, member_name
 
-    raise ValueError("no PE file found in zip")
+    raise ValueError("no supported file (PE/ELF) found in zip")
 
 
 @app.post("/api/jobs")
@@ -226,7 +228,7 @@ async def create_job_upload(
     if zipfile.is_zipfile(tmp_path):
         try:
             extracted_dir = tmp / (fs_safe_name(file.filename) + "_extracted")
-            sample_path, original_name = _extract_zip_pick_pe(
+            sample_path, original_name = _extract_zip_pick_sample(
                 src_zip=tmp_path,
                 out_dir=extracted_dir,
                 password="infected",
@@ -235,8 +237,8 @@ async def create_job_upload(
         except Exception as e:
             raise HTTPException(400, f"zip extract failed: {e}")
 
-    if not looks_like_pe(sample_path):
-        raise HTTPException(400, "not a PE file")
+    if not (looks_like_pe(sample_path) or looks_like_elf(sample_path)):
+        raise HTTPException(400, "not a supported file (PE/ELF)")
 
     job_id = sha256_file(sample_path)
     paths = _job_paths(job_id)
@@ -264,7 +266,7 @@ async def create_job_by_path(background: BackgroundTasks, path: str = Form(...))
     if zipfile.is_zipfile(p):
         try:
             extracted_dir = Path(settings.work_dir) / ".uploads" / (fs_safe_name(p.name) + "_extracted")
-            sample_path, original_name = _extract_zip_pick_pe(
+            sample_path, original_name = _extract_zip_pick_sample(
                 src_zip=p,
                 out_dir=extracted_dir,
                 password="infected",
@@ -273,8 +275,8 @@ async def create_job_by_path(background: BackgroundTasks, path: str = Form(...))
         except Exception as e:
             raise HTTPException(400, f"zip extract failed: {e}")
 
-    if not looks_like_pe(sample_path):
-        raise HTTPException(400, "not a PE file")
+    if not (looks_like_pe(sample_path) or looks_like_elf(sample_path)):
+        raise HTTPException(400, "not a supported file (PE/ELF)")
 
     job_id = sha256_file(sample_path)
     paths = _job_paths(job_id)
