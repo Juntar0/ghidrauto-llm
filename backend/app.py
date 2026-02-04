@@ -45,6 +45,7 @@ from .chat_llm import (
 )
 from .chat_tools_v2 import TOOL_DESCRIPTIONS, dispatch_tool_v2
 from .pe_exports import parse_pe_exports
+from .elf_tools import read_elf_info, read_elf_dynamic, read_elf_symbols, read_elf_imports
 
 # In-memory session state for multi-step exploration
 # Structure: {job_id: {step_count: int, active_function_id: str | None, last_updated: float}}
@@ -392,6 +393,8 @@ async def get_exports(job_id: str, limit: int = Query(200, ge=1, le=1000)):
     - Adds best-effort VA (image_base + RVA) if analysis.json is available.
     - Adds best-effort function_id resolution for each export by matching VA to
       function entry or function range.
+
+    Note: For ELF binaries, use /api/jobs/{job_id}/elf/* endpoints.
     """
 
     def _parse_hex(s: str | None) -> int | None:
@@ -470,6 +473,77 @@ async def get_exports(job_id: str, limit: int = Query(200, ge=1, le=1000)):
         return JSONResponse(data)
     except Exception as e:
         raise HTTPException(500, f"export parse error: {e}")
+
+
+@app.get("/api/jobs/{job_id}/elf/info")
+async def get_elf_info(job_id: str):
+    inp = Path(settings.work_dir) / job_id / "input"
+    if not inp.exists():
+        raise HTTPException(404, "input not found")
+    files = [p for p in inp.iterdir() if p.is_file()]
+    if not files:
+        raise HTTPException(404, "no input file")
+    p0 = files[0]
+    try:
+        data = read_elf_info(p0)
+        data["job_id"] = job_id
+        return JSONResponse(data)
+    except Exception as e:
+        raise HTTPException(500, f"elf info error: {e}")
+
+
+@app.get("/api/jobs/{job_id}/elf/dynamic")
+async def get_elf_dynamic(job_id: str):
+    inp = Path(settings.work_dir) / job_id / "input"
+    if not inp.exists():
+        raise HTTPException(404, "input not found")
+    files = [p for p in inp.iterdir() if p.is_file()]
+    if not files:
+        raise HTTPException(404, "no input file")
+    p0 = files[0]
+    try:
+        data = read_elf_dynamic(p0)
+        data["job_id"] = job_id
+        return JSONResponse(data)
+    except Exception as e:
+        raise HTTPException(500, f"elf dynamic error: {e}")
+
+
+@app.get("/api/jobs/{job_id}/elf/symbols")
+async def get_elf_symbols(job_id: str, kind: str = Query("dyn"), limit: int = Query(2000, ge=1, le=50000)):
+    inp = Path(settings.work_dir) / job_id / "input"
+    if not inp.exists():
+        raise HTTPException(404, "input not found")
+    files = [p for p in inp.iterdir() if p.is_file()]
+    if not files:
+        raise HTTPException(404, "no input file")
+    p0 = files[0]
+    k = (kind or "dyn").strip().lower()
+    if k not in ("dyn", "sym"):
+        raise HTTPException(400, "kind must be dyn|sym")
+    try:
+        data = read_elf_symbols(p0, kind=k, limit=int(limit))
+        data["job_id"] = job_id
+        return JSONResponse(data)
+    except Exception as e:
+        raise HTTPException(500, f"elf symbols error: {e}")
+
+
+@app.get("/api/jobs/{job_id}/elf/imports")
+async def get_elf_imports(job_id: str, limit: int = Query(5000, ge=1, le=50000)):
+    inp = Path(settings.work_dir) / job_id / "input"
+    if not inp.exists():
+        raise HTTPException(404, "input not found")
+    files = [p for p in inp.iterdir() if p.is_file()]
+    if not files:
+        raise HTTPException(404, "no input file")
+    p0 = files[0]
+    try:
+        data = read_elf_imports(p0, limit=int(limit))
+        data["job_id"] = job_id
+        return JSONResponse(data)
+    except Exception as e:
+        raise HTTPException(500, f"elf imports error: {e}")
 
 
 @app.get("/api/jobs/{job_id}/capa")

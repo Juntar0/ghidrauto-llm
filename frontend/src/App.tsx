@@ -822,6 +822,14 @@ export default function App() {
   const [showExports, setShowExports] = useState<boolean>(false)
   const [exportsData, setExportsData] = useState<any>(null)
   const [exportsError, setExportsError] = useState<string | null>(null)
+
+  const [showElf, setShowElf] = useState<boolean>(false)
+  const [elfInfo, setElfInfo] = useState<any>(null)
+  const [elfDynamic, setElfDynamic] = useState<any>(null)
+  const [elfImports, setElfImports] = useState<any>(null)
+  const [elfDynSymbols, setElfDynSymbols] = useState<any>(null)
+  const [elfSymtabSymbols, setElfSymtabSymbols] = useState<any>(null)
+  const [elfError, setElfError] = useState<string | null>(null)
   
   // Chat assistant
   const [showChat, setShowChat] = useState<boolean>(false)
@@ -1354,6 +1362,44 @@ export default function App() {
     } catch (e: any) {
       setExportsError(String(e?.message || e))
       setExportsData(null)
+      return null
+    }
+  }
+
+  async function loadElfAll(id: string) {
+    try {
+      setElfError(null)
+      const [infoR, dynR, impR, dynSymR, symtabR] = await Promise.all([
+        fetch(`${apiBase}/api/jobs/${id}/elf/info`),
+        fetch(`${apiBase}/api/jobs/${id}/elf/dynamic`),
+        fetch(`${apiBase}/api/jobs/${id}/elf/imports?limit=5000`),
+        fetch(`${apiBase}/api/jobs/${id}/elf/symbols?kind=dyn&limit=2000`),
+        fetch(`${apiBase}/api/jobs/${id}/elf/symbols?kind=sym&limit=2000`),
+      ])
+
+      const infoJ = await infoR.json().catch(() => null)
+      const dynJ = await dynR.json().catch(() => null)
+      const impJ = await impR.json().catch(() => null)
+      const dynSymJ = await dynSymR.json().catch(() => null)
+      const symtabJ = await symtabR.json().catch(() => null)
+
+      if (!infoR.ok) throw new Error((infoJ && (infoJ.detail || infoJ.error)) || `HTTP ${infoR.status}`)
+      if (!dynR.ok) throw new Error((dynJ && (dynJ.detail || dynJ.error)) || `HTTP ${dynR.status}`)
+      if (!impR.ok) throw new Error((impJ && (impJ.detail || impJ.error)) || `HTTP ${impR.status}`)
+
+      setElfInfo(infoJ)
+      setElfDynamic(dynJ)
+      setElfImports(impJ)
+      setElfDynSymbols(dynSymJ)
+      setElfSymtabSymbols(symtabJ)
+      return { info: infoJ, dynamic: dynJ, imports: impJ, dynsym: dynSymJ, symtab: symtabJ }
+    } catch (e: any) {
+      setElfError(String(e?.message || e))
+      setElfInfo(null)
+      setElfDynamic(null)
+      setElfImports(null)
+      setElfDynSymbols(null)
+      setElfSymtabSymbols(null)
       return null
     }
   }
@@ -2484,6 +2530,19 @@ export default function App() {
             >
               Exports
               {exportsData?.exports?.length ? <span className='badge' style={{ marginLeft: 8 }}>{exportsData.exports.length}</span> : null}
+            </button>
+
+            <button
+              className='smallBtn'
+              onClick={() => {
+                if (!jobId) return
+                setShowElf(true)
+                loadElfAll(jobId)
+              }}
+              disabled={!jobId}
+              title='Show ELF info (symbols, needed, reloc imports)'
+            >
+              ELF
             </button>
 
             <button
@@ -4301,6 +4360,113 @@ export default function App() {
                   )
                 })
               )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showElf ? (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            zIndex: 1090,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={() => setShowElf(false)}
+        >
+          <div
+            style={{
+              background: '#1a1a1a',
+              borderRadius: 12,
+              maxWidth: '90vw',
+              width: '100%',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18 }}>ELF</h3>
+                <div className='secondary' style={{ fontSize: 12, marginTop: 4 }}>
+                  {elfInfo?.machine ? `Machine: ${elfInfo.machine} ` : ''}
+                  {elfInfo?.etype ? `Type: ${elfInfo.etype} ` : ''}
+                  {typeof elfInfo?.is_pie === 'boolean' ? `(PIE: ${elfInfo.is_pie ? 'yes' : 'no'})` : ''}
+                </div>
+                {elfError ? (
+                  <div style={{ color: 'rgba(255,96,96,0.9)', fontSize: 12, marginTop: 6, whiteSpace: 'pre-wrap' }}>{elfError}</div>
+                ) : null}
+              </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <button
+                  className='smallBtn'
+                  onClick={() => {
+                    if (jobId) loadElfAll(jobId)
+                  }}
+                  disabled={!jobId}
+                >
+                  Refresh
+                </button>
+                <button className='smallBtn' onClick={() => setShowElf(false)} style={{ fontSize: 20, padding: '4px 12px' }}>
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: 20, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Info</div>
+                <div className='secondary' style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                  {elfInfo ? JSON.stringify(elfInfo, null, 2) : 'No ELF info'}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Dynamic (NEEDED/RPATH)</div>
+                <div className='secondary' style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                  {elfDynamic ? JSON.stringify(elfDynamic, null, 2) : 'No dynamic info'}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Imports (relocations)</div>
+                <div className='secondary' style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                  {elfImports ? JSON.stringify(elfImports, null, 2) : 'No imports'}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Symbols (.dynsym)</div>
+                <div className='secondary' style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                  {elfDynSymbols ? JSON.stringify(elfDynSymbols, null, 2) : 'No dynsym'}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Symbols (.symtab)</div>
+                <div className='secondary' style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                  {elfSymtabSymbols ? JSON.stringify(elfSymtabSymbols, null, 2) : 'No symtab'}
+                </div>
+              </div>
             </div>
           </div>
         </div>
