@@ -1618,8 +1618,33 @@ export default function App() {
 
   const ghidraRows = useMemo(() => {
     const lines = ghidraDecomp.split(/\r?\n/)
+
+    // Display-only rename: replace the function name on the first line of the Ghidra decompile
+    // with AI-proposed name/signature (does not modify the underlying extracted .c file).
+    try {
+      if (selected && ai?.function_id === selected) {
+        const sig = (ai.signature || '').trim()
+        const pn = (ai.proposed_name || '').trim()
+
+        // Extract name from signature like: "int foo(int a)" -> "foo"
+        let newName = ''
+        if (sig) {
+          const m = sig.match(/\b([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)(?:<[^>\n]{1,60}>)?\s*\(/)
+          if (m) newName = m[1]
+        }
+        if (!newName && pn) newName = pn
+
+        if (newName && lines.length > 0) {
+          // Replace the first identifier that looks like a function name just before '('
+          lines[0] = lines[0].replace(/\b([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*(?:<[^>\n]{1,60}>)?)\s*\(/, `${newName}(`)
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     return lines.map((line, i) => ({ ln: i + 1, text: line }))
-  }, [ghidraDecomp])
+  }, [ghidraDecomp, selected, ai])
 
   // @ts-ignore - unused after syntax highlighting
   function renderGhidraLine(line: string, ln: number) {
