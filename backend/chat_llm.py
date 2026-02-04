@@ -127,6 +127,7 @@ Role: **Planner**. Plan the next 1 to 3 actions only.
 
 Guards:
 - Use ONLY the provided tool list.
+- For DLL analysis: prefer get_exports + get_entrypoint_candidate early.
 - Do NOT exceed 3 planned actions.
 - Do NOT fabricate IDs (function_id/address/job_id). If unknown, plan a search first.
 - Output MUST be valid JSON only.

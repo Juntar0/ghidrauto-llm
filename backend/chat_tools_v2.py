@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .memory_peek import memory_view
+from .pe_exports import parse_pe_exports
 
 
 def get_job_summary(work_dir: str, job_id: str) -> dict[str, Any]:
@@ -283,21 +284,59 @@ def get_artifacts(work_dir: str, job_id: str, artifact_type: str = "all") -> dic
 
 
 def peek_memory(work_dir: str, job_id: str, addr: str, length: int = 0x200) -> dict[str, Any]:
-    """Peek memory by Virtual Address (VA) via Ghidra headless.
-
-    Args:
-      addr: hex virtual address string (e.g. "0x140003000")
-      length: bytes to read (1..0x4000)
-
-    Returns:
-      {job_id, va, len, bytes_b64, arch, ptr_size, annotations, error}
-
-    Notes:
-      - Requires extract to have created ghidra_project.
-      - bytes are returned as base64; caller can decode/render as hex/ASCII.
-    """
-    # memory_view already enforces length bounds and validates addr
+    """Peek memory by Virtual Address (VA) via Ghidra headless."""
     return memory_view(job_id=job_id, addr=addr, length=length)
+
+
+def get_entrypoint_candidate(work_dir: str, job_id: str) -> dict[str, Any]:
+    """Get entrypoint-based candidate function (EXE: main/EP, DLL: DllMain candidate).
+
+    Returns ui.default_function_id + entrypoint address if available.
+    """
+    job_path = Path(work_dir) / job_id
+    analysis_file = job_path / "extract" / "analysis.json"
+    if not analysis_file.exists():
+        return {"job_id": job_id, "error": "analysis.json not found"}
+
+    try:
+        analysis = json.loads(analysis_file.read_text(encoding="utf-8"))
+    except Exception as e:
+        return {"job_id": job_id, "error": str(e)}
+
+    sample = analysis.get("sample", {})
+    ui = analysis.get("ui", {})
+    return {
+        "job_id": job_id,
+        "entry_point": sample.get("entry_point"),
+        "image_base": sample.get("image_base"),
+        "default_function_id": ui.get("default_function_id"),
+        "default_function_reason": ui.get("default_function_reason"),
+    }
+
+
+def get_exports(work_dir: str, job_id: str, limit: int = 200) -> dict[str, Any]:
+    """List PE exports for the uploaded binary (DLL entrypoints).
+
+    Uses a lightweight PE export parser (no external deps).
+    """
+    job_path = Path(work_dir) / job_id
+    inp = job_path / "input"
+    if not inp.exists():
+        return {"job_id": job_id, "error": "input directory not found"}
+
+    # pick first file in input directory
+    files = [p for p in inp.iterdir() if p.is_file()]
+    if not files:
+        return {"job_id": job_id, "error": "no input file"}
+
+    pe_path = files[0]
+    try:
+        data = parse_pe_exports(pe_path, limit=int(limit))
+        data["job_id"] = job_id
+        data["path"] = str(pe_path)
+        return data
+    except Exception as e:
+        return {"job_id": job_id, "error": str(e), "path": str(pe_path)}
 
 
 def run_ai_decompile(work_dir: str, job_id: str, function_id: str, mode: str = "default") -> dict[str, Any]:
@@ -335,6 +374,8 @@ TOOL_REGISTRY = {
     "get_xrefs": get_xrefs,
     "get_callgraph": get_callgraph,
     "peek_memory": peek_memory,
+    "get_entrypoint_candidate": get_entrypoint_candidate,
+    "get_exports": get_exports,
     "get_pe_map": get_pe_map,
     "get_artifacts": get_artifacts,
     "run_ai_decompile": run_ai_decompile,
@@ -344,6 +385,20 @@ TOOL_REGISTRY = {
 
 TOOL_DESCRIPTIONS = """
 ## Available Tools
+
+### DLL / Entry Tools (重要)
+
+0. **get_entrypoint_candidate**
+   - Purpose: Get entrypoint-based candidate function (EXE entrypoint / DLL DllMain candidate)
+   - Args: `{}`
+   - Returns: `{ "entry_point": "...", "default_function_id": "...", "default_function_reason": "..." }`
+   - Use when: Start analysis; for DLL, this is the DllMain *candidate*
+
+0. **get_exports**
+   - Purpose: List exports from the uploaded PE (especially important for DLL)
+   - Args: `{ "limit": 200 }`
+   - Returns: `{ "dll_name": "...", "exports": [{"name":"...","ordinal":1,"rva":"0x..."}, ...] }`
+   - Use when: DLL analysis; exported functions are real entrypoints
 
 ### Core Tools (Information Retrieval)
 
