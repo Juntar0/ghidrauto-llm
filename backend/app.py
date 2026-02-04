@@ -746,25 +746,65 @@ def _read_file_cached(path: Path) -> bytes:
     return data
 
 
+def _resolve_extracted_file(job_id: str, subdir: str, function_id: str, ext: str) -> Path | None:
+    """Resolve extracted artifact path for a function.
+
+    ExtractAnalysis.java writes filenames using a sanitized version of the function name.
+    In practice, there can be minor variations (trailing underscores, double underscores)
+    depending on the original symbol name.
+
+    We try a small set of candidates and (as a last resort) scan the directory for a
+    case-insensitive match.
+    """
+    base = Path(settings.work_dir) / job_id / "extract" / subdir
+
+    fid = str(function_id)
+    direct = base / f"{fid}{ext}"
+    if direct.exists():
+        return direct
+
+    try:
+        import re
+
+        safe = re.sub(r"[^A-Za-z0-9_\-\.]", "_", fid)
+        cands = []
+        cands.append(safe)
+        cands.append(safe.rstrip("_"))
+        cands.append(safe.rstrip("_") + "_")
+        cands.append(safe.rstrip("_") + "__")
+        cands.append(re.sub(r"_+", "_", safe))
+        cands.append(re.sub(r"_+", "_", safe).rstrip("_"))
+
+        seen = set()
+        for s in cands:
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            p = base / f"{s}{ext}"
+            if p.exists():
+                return p
+
+        # Last resort: scan directory for case-insensitive stem match against candidates
+        cand_l = {s.lower() for s in seen if s}
+        if base.exists():
+            for fp in base.iterdir():
+                if not fp.is_file():
+                    continue
+                if fp.suffix.lower() != ext.lower():
+                    continue
+                if fp.stem.lower() in cand_l:
+                    return fp
+    except Exception:
+        pass
+
+    return None
+
+
 @app.get("/api/jobs/{job_id}/functions/{function_id}/disasm")
 async def get_disasm(job_id: str, function_id: str):
-    """Return extracted disassembly for a function.
-
-    Note: Ghidra export filenames are sanitized in ExtractAnalysis.java, so we also
-    try a sanitized fallback here.
-    """
-    p = Path(settings.work_dir) / job_id / "extract" / "disasm" / f"{function_id}.txt"
-    if not p.exists():
-        try:
-            import re
-
-            safe = re.sub(r"[^A-Za-z0-9_\-\.]", "_", str(function_id))
-            p2 = Path(settings.work_dir) / job_id / "extract" / "disasm" / f"{safe}.txt"
-            if p2.exists():
-                p = p2
-        except Exception:
-            pass
-    if not p.exists():
+    """Return extracted disassembly for a function."""
+    p = _resolve_extracted_file(job_id, "disasm", function_id, ".txt")
+    if not p or not p.exists():
         raise HTTPException(404, "disasm not found")
     data = _read_file_cached(p)
     return Response(content=data, media_type="text/plain; charset=utf-8")
@@ -772,23 +812,9 @@ async def get_disasm(job_id: str, function_id: str):
 
 @app.get("/api/jobs/{job_id}/functions/{function_id}/ghidra")
 async def get_ghidra_decompile(job_id: str, function_id: str):
-    """Return extracted Ghidra decompile output for a function.
-
-    Note: Ghidra export filenames are sanitized in ExtractAnalysis.java, so we also
-    try a sanitized fallback here.
-    """
-    p = Path(settings.work_dir) / job_id / "extract" / "decomp" / f"{function_id}.c"
-    if not p.exists():
-        try:
-            import re
-
-            safe = re.sub(r"[^A-Za-z0-9_\-\.]", "_", str(function_id))
-            p2 = Path(settings.work_dir) / job_id / "extract" / "decomp" / f"{safe}.c"
-            if p2.exists():
-                p = p2
-        except Exception:
-            pass
-    if not p.exists():
+    """Return extracted Ghidra decompile output for a function."""
+    p = _resolve_extracted_file(job_id, "decomp", function_id, ".c")
+    if not p or not p.exists():
         raise HTTPException(404, "ghidra decompile not found")
     data = _read_file_cached(p)
     return Response(content=data, media_type="text/plain; charset=utf-8")
