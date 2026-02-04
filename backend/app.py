@@ -44,6 +44,7 @@ from .chat_llm import (
     call_openai_compatible,
 )
 from .chat_tools_v2 import TOOL_DESCRIPTIONS, dispatch_tool_v2
+from .pe_exports import parse_pe_exports
 
 # In-memory session state for multi-step exploration
 # Structure: {job_id: {step_count: int, active_function_id: str | None, last_updated: float}}
@@ -381,6 +382,27 @@ async def get_memory_view(job_id: str, addr: str = Query(...), len: int = Query(
         raise HTTPException(500, "peek memory failed; see extract/peekmem.log")
     except Exception as e:
         raise HTTPException(500, f"peek memory error: {e}")
+
+
+@app.get("/api/jobs/{job_id}/exports")
+async def get_exports(job_id: str, limit: int = Query(200, ge=1, le=1000)):
+    """List PE exports for the uploaded binary (DLL entrypoints)."""
+    inp = Path(settings.work_dir) / job_id / "input"
+    if not inp.exists():
+        raise HTTPException(404, "input not found")
+
+    files = [p for p in inp.iterdir() if p.is_file()]
+    if not files:
+        raise HTTPException(404, "no input file")
+
+    pe_path = files[0]
+    try:
+        data = parse_pe_exports(pe_path, limit=int(limit))
+        data["job_id"] = job_id
+        data["path"] = str(pe_path)
+        return JSONResponse(data)
+    except Exception as e:
+        raise HTTPException(500, f"export parse error: {e}")
 
 
 @app.get("/api/jobs/{job_id}/capa")

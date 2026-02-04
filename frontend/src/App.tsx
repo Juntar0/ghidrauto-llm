@@ -779,6 +779,9 @@ export default function App() {
   const [showCapaModal, setShowCapaModal] = useState<boolean>(false)
   const [showXrefs, setShowXrefs] = useState<boolean>(false)
   const [showStrings, setShowStrings] = useState<boolean>(false)
+  const [showExports, setShowExports] = useState<boolean>(false)
+  const [exportsData, setExportsData] = useState<any>(null)
+  const [exportsError, setExportsError] = useState<string | null>(null)
   
   // Chat assistant
   const [showChat, setShowChat] = useState<boolean>(false)
@@ -1280,6 +1283,21 @@ export default function App() {
       setCapaData(data)
     } catch {
       setCapaData({ error: 'Failed to load CAPA results' })
+    }
+  }
+
+  async function loadExports(id: string) {
+    try {
+      setExportsError(null)
+      const r = await fetch(`${apiBase}/api/jobs/${id}/exports`)
+      const j = await r.json().catch(() => null)
+      if (!r.ok) throw new Error((j && (j.detail || j.error)) || `HTTP ${r.status}`)
+      setExportsData(j)
+      return j
+    } catch (e: any) {
+      setExportsError(String(e?.message || e))
+      setExportsData(null)
+      return null
     }
   }
 
@@ -2358,6 +2376,32 @@ export default function App() {
             >
               Strings
               {analysis?.strings?.length ? <span className='badge' style={{ marginLeft: 8 }}>{analysis.strings.length}</span> : null}
+            </button>
+
+            <button
+              className='smallBtn'
+              onClick={() => {
+                if (!jobId) return
+                setShowExports(true)
+                loadExports(jobId)
+              }}
+              disabled={!jobId}
+              title='Show PE exports (DLL entrypoints)'
+            >
+              Exports
+              {exportsData?.exports?.length ? <span className='badge' style={{ marginLeft: 8 }}>{exportsData.exports.length}</span> : null}
+            </button>
+
+            <button
+              className='smallBtn'
+              onClick={() => {
+                const fid = analysis?.ui?.default_function_id
+                if (fid) navigateTo(String(fid))
+              }}
+              disabled={!analysis?.ui?.default_function_id}
+              title='Jump to entrypoint-based candidate (DLL: DllMain candidate)'
+            >
+              DllMain候補へ
             </button>
 
             {/* moved to Settings */}
@@ -4033,6 +4077,113 @@ export default function App() {
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showExports ? (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            zIndex: 1090,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={() => setShowExports(false)}
+        >
+          <div
+            style={{
+              background: '#1a1a1a',
+              borderRadius: 12,
+              maxWidth: '90vw',
+              width: '100%',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18 }}>Exports</h3>
+                <div className='secondary' style={{ fontSize: 12, marginTop: 4 }}>
+                  {exportsData?.dll_name ? `DLL: ${exportsData.dll_name} ` : ''}
+                  ({exportsData?.exports?.length ?? 0} exports)
+                </div>
+                {exportsError ? (
+                  <div style={{ color: 'rgba(255,96,96,0.9)', fontSize: 12, marginTop: 6, whiteSpace: 'pre-wrap' }}>{exportsError}</div>
+                ) : null}
+              </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <button
+                  className='smallBtn'
+                  onClick={() => {
+                    if (jobId) loadExports(jobId)
+                  }}
+                  disabled={!jobId}
+                >
+                  Refresh
+                </button>
+                <button className='smallBtn' onClick={() => setShowExports(false)} style={{ fontSize: 20, padding: '4px 12px' }}>
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: 20, overflow: 'auto' }}>
+              {!exportsData?.exports?.length ? (
+                <div className='secondary'>No exports found (or not a DLL).</div>
+              ) : (
+                (exportsData.exports as any[]).map((ex, i) => {
+                  const nm = String(ex?.name || '')
+                  const ord = ex?.ordinal
+                  const rva = String(ex?.rva || '')
+                  const fwd = ex?.forwarder
+                  return (
+                    <div
+                      key={`exp-${i}-${nm}-${ord}`}
+                      className='fnItem'
+                      style={{ cursor: nm ? 'pointer' : 'default' }}
+                      onClick={() => {
+                        if (!nm) return
+                        const fid = nameToId.get(nm.toLowerCase())
+                        if (fid) {
+                          navigateTo(fid)
+                          setShowExports(false)
+                        }
+                      }}
+                      title={nm ? `Click to jump (if function name matches): ${nm}` : ''}
+                    >
+                      <div className='fnMeta'>
+                        <div className='fnName'>{nm || '(no name)'}</div>
+                        <div className='fnSub'>
+                          <span style={{ fontFamily: 'monospace' }}>ord={String(ord ?? '')}</span>
+                          <span style={{ marginLeft: 10, fontFamily: 'monospace' }}>rva={rva}</span>
+                          {fwd ? <span style={{ marginLeft: 10, fontFamily: 'monospace' }}>fwd={String(fwd)}</span> : null}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
             </div>
           </div>
         </div>
