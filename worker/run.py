@@ -559,6 +559,51 @@ def _read_text(p: Path, limit: int) -> str:
         return ""
 
 
+def _resolve_extracted_path(base_dir: Path, subdir: str, fid_in: str, ext: str) -> Path:
+    """Resolve extracted artifact path for a function.
+
+    The Ghidra extraction script writes filenames using a sanitized version of the function name
+    and may introduce minor variations (e.g., trailing underscores, double underscores).
+
+    This returns the *best-effort* path (it may not exist).
+    """
+    d = base_dir / "extract" / subdir
+    p0 = d / f"{fid_in}{ext}"
+    if p0.exists():
+        return p0
+    try:
+        import re
+
+        safe = re.sub(r"[^A-Za-z0-9_\-\.]", "_", fid_in)
+        cands = [
+            safe,
+            safe.rstrip("_"),
+            safe.rstrip("_") + "_",
+            safe.rstrip("_") + "__",
+            re.sub(r"_+", "_", safe),
+            re.sub(r"_+", "_", safe).rstrip("_"),
+        ]
+        seen = set()
+        for s in cands:
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            p = d / f"{s}{ext}"
+            if p.exists():
+                return p
+
+        # last resort: scan dir for stem match
+        cand_l = {s.lower() for s in seen if s}
+        if d.exists():
+            for fp in d.iterdir():
+                if fp.is_file() and fp.suffix.lower() == ext.lower() and fp.stem.lower() in cand_l:
+                    return fp
+    except Exception:
+        pass
+
+    return p0
+
+
 def _extract_calls_from_text(text: str) -> list[str]:
     import re
 
@@ -634,13 +679,13 @@ def _build_context_bundle(base: Path, fid: str, disasm_text: str) -> tuple[str, 
     """Construct the model input text + a small summary for logs."""
 
     # Keep each section bounded.
-    ghidra_path = base / "extract" / "decomp" / f"{fid}.c"
-    pcode_path = base / "extract" / "pcode" / f"{fid}.txt"
+    ghidra_path = _resolve_extracted_path(base, "decomp", fid, ".c")
+    pcode_path = _resolve_extracted_path(base, "pcode", fid, ".txt")
 
     ghidra_c = _read_text(ghidra_path, 22000)
     pcode = _read_text(pcode_path, 12000)
     if not pcode:
-        raise RuntimeError("pcode missing (extract/pcode/{fid}.txt). Please Re-extract to generate pcode.")
+        raise RuntimeError(f"pcode missing ({pcode_path}). Please Re-extract to generate pcode.")
 
     calls_out = _extract_calls_from_text(disasm_text)[:20]
     # calls_in: best-effort scan a limited number of disasm files (can be expensive)
