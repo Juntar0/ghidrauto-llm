@@ -229,6 +229,13 @@ Your answer MUST follow this format using **MARKDOWN**:
 - Guessed function names
 - Assumed behavior without code evidence
 - Information not present in tool results
+
+### Tool Result Processing
+**IMPORTANT**: When you receive tool results:
+- `search_strings` and similar tools return `"result"` field with formatted markdown
+- **USE that markdown directly** in your answer - do NOT reformat tool results
+- If tool result contains markdown text, preserve its formatting exactly
+- For complex tool results, include them as-is in Evidence section
 """
 
 

@@ -40,9 +40,9 @@ def tool_search_strings(work_dir: str, job_id: str, query: str, limit: int = 50)
     markdown_text = "\n".join(markdown_lines)
     
     return {
+        "result": markdown_text,
         "query": query,
         "count": result.get("count", 0),
-        "markdown": markdown_text,
         "matches": strings  # Keep raw data for advanced usage
     }
 
