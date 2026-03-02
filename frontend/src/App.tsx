@@ -4724,6 +4724,7 @@ export default function App() {
                     )}
                     <div style={{ fontSize: 13, lineHeight: 1.5, wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
                       <ReactMarkdown
+                        breaks={false}
                         components={{
                           p: ({ children }) => <p style={{ margin: '0.5em 0' }}>{children}</p>,
                           h1: ({ children }) => <h1 style={{ margin: '0.8em 0 0.4em', fontSize: '1.4em' }}>{children}</h1>,
