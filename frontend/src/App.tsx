@@ -4105,25 +4105,33 @@ export default function App() {
                             </span>
                           )}
                           {s.in_function && (
-                            <span
+                            <button
                               style={{
                                 fontSize: 10,
                                 color: '#a5f06c',
                                 padding: '2px 6px',
                                 background: 'rgba(165, 240, 108, 0.1)',
+                                border: 'none',
                                 borderRadius: 4,
                                 cursor: 'pointer',
                                 textDecoration: 'underline',
                                 transition: 'all 0.2s',
+                                fontFamily: 'inherit',
                               }}
                               onClick={() => {
                                 // Find the function_id matching this function name
+                                console.log('Searching for function:', s.in_function)
+                                console.log('Available functions:', analysis?.functions?.map(f => ({ id: f.id, name: f.name })))
                                 const func = analysis?.functions?.find(
                                   (f) => f.name === s.in_function || f.id === s.in_function
                                 )
+                                console.log('Found function:', func)
                                 if (func) {
+                                  console.log('Setting selected to:', func.id)
                                   setSelected(func.id)
                                   setShowStrings(false)
+                                } else {
+                                  console.warn('Function not found for:', s.in_function)
                                 }
                               }}
                               title={`Go to ${s.in_function}`}
@@ -4135,7 +4143,7 @@ export default function App() {
                               }}
                             >
                               {s.in_function}
-                            </span>
+                            </button>
                           )}
                         </div>
                         <div className='secondary' style={{ fontSize: 12, textAlign: 'right' }}>
