@@ -161,22 +161,36 @@ public class ExtractAnalysis extends GhidraScript {
 	private void writeDecompAndPcode(DecompInterface ifc, Function f, File decompDir, File pcodeDir) throws IOException {
 		String fid = sanitize(f.getName());
 
+		println("DEBUG: writeDecompAndPcode for " + f.getName() + " (sanitized: " + fid + ")");
+		println("DEBUG: decompDir=" + decompDir.getAbsolutePath() + ", exists=" + decompDir.exists());
+
 		DecompileResults res = decompileOnce(ifc, f);
+		println("DEBUG: decompileOnce returned: " + (res != null ? "non-null" : "NULL"));
+		if (res != null) {
+			println("DEBUG: res.decompileCompleted()=" + res.decompileCompleted());
+			println("DEBUG: res.getErrorMessage()=" + res.getErrorMessage());
+		}
 
 		// --- C-like decompile
 		File outC = new File(decompDir, fid + ".c");
+		println("DEBUG: output file will be: " + outC.getAbsolutePath());
 		String cText = "";
 		try {
 			if (res != null && res.decompileCompleted()) {
 				DecompiledFunction df = res.getDecompiledFunction();
 				if (df != null) cText = df.getC();
+				println("DEBUG: decompile succeeded, cText length=" + cText.length());
 			} else if (res != null) {
 				cText = "// decompile_failed: " + res.getErrorMessage();
+				println("DEBUG: decompile incomplete: " + res.getErrorMessage());
 			} else {
 				cText = "// decompile_failed: null results";
+				println("DEBUG: decompile null results");
 			}
 		} catch (Exception e) {
 			cText = "// decompile_exception: " + e.toString();
+			println("DEBUG: decompile exception: " + e.toString());
+			e.printStackTrace();
 		}
 		if (cText == null) cText = "";
 		int cLines = 0;
@@ -185,10 +199,18 @@ public class ExtractAnalysis extends GhidraScript {
 		} catch (Exception e) {
 			cLines = 0;
 		}
-		try (Writer w = new OutputStreamWriter(new FileOutputStream(outC), "UTF-8")) {
-			w.write("// lines=" + cLines + "\n");
-			w.write(cText);
-			if (!cText.endsWith("\n")) w.write("\n");
+		try {
+			println("DEBUG: writing to " + outC.getAbsolutePath());
+			try (Writer w = new OutputStreamWriter(new FileOutputStream(outC), "UTF-8")) {
+				w.write("// lines=" + cLines + "\n");
+				w.write(cText);
+				if (!cText.endsWith("\n")) w.write("\n");
+			}
+			println("DEBUG: file written successfully");
+		} catch (Exception e) {
+			println("ERROR: failed to write " + outC.getAbsolutePath() + ": " + e.toString());
+			e.printStackTrace();
+			throw e;
 		}
 
 		// --- P-code
@@ -285,9 +307,18 @@ public class ExtractAnalysis extends GhidraScript {
 		File decompDir = new File(args[2]);
 		File pcodeDir = new File(args[3]);
 		File statusPath = new File(args[4]);
-		if (!disasmDir.exists()) disasmDir.mkdirs();
-		if (!decompDir.exists()) decompDir.mkdirs();
-		if (!pcodeDir.exists()) pcodeDir.mkdirs();
+		
+		println("DEBUG: disasmDir=" + disasmDir.getAbsolutePath());
+		println("DEBUG: decompDir=" + decompDir.getAbsolutePath());
+		println("DEBUG: pcodeDir=" + pcodeDir.getAbsolutePath());
+		
+		if (!disasmDir.exists()) { disasmDir.mkdirs(); println("DEBUG: created disasmDir"); }
+		if (!decompDir.exists()) { decompDir.mkdirs(); println("DEBUG: created decompDir"); }
+		if (!pcodeDir.exists()) { pcodeDir.mkdirs(); println("DEBUG: created pcodeDir"); }
+		
+		println("DEBUG: disasmDir.exists=" + disasmDir.exists() + ", isDir=" + disasmDir.isDirectory());
+		println("DEBUG: decompDir.exists=" + decompDir.exists() + ", isDir=" + decompDir.isDirectory());
+		println("DEBUG: pcodeDir.exists=" + pcodeDir.exists() + ", isDir=" + pcodeDir.isDirectory());
 
 		FunctionManager fm = currentProgram.getFunctionManager();
 
@@ -296,7 +327,9 @@ public class ExtractAnalysis extends GhidraScript {
 		ifc.toggleCCode(true);
 		ifc.toggleSyntaxTree(false);
 		ifc.setSimplificationStyle("decompile");
+		println("DEBUG: opening program in DecompInterface...");
 		ifc.openProgram(currentProgram);
+		println("DEBUG: program opened in DecompInterface");
 
 		// Deduplicate by entry point address (some functions appear multiple times with same name).
 		Map<String, Function> funcMap = new LinkedHashMap<>();
@@ -308,6 +341,8 @@ public class ExtractAnalysis extends GhidraScript {
 		}
 		List<Function> funcs = new ArrayList<>(funcMap.values());
 		funcs.sort(Comparator.comparingLong(f -> f.getEntryPoint().getOffset()));
+
+		println("DEBUG: total functions to process: " + funcs.size());
 
 		// Extract import table
 		Map<String, ImportInfo> importMap = extractImports();
@@ -498,12 +533,14 @@ public class ExtractAnalysis extends GhidraScript {
 			try {
 				writeDisasm(f, disasmDir);
 			} catch (Exception e) {
-				// continue
+				println("ERROR: writeDisasm failed for " + f.getName() + ": " + e.toString());
 			}
 			try {
+				println("DEBUG: calling writeDecompAndPcode for function " + i + "/" + funcs.size() + " (" + f.getName() + ")");
 				writeDecompAndPcode(ifc, f, decompDir, pcodeDir);
 			} catch (Exception e) {
-				// continue
+				println("ERROR: writeDecompAndPcode failed for " + f.getName() + ": " + e.toString());
+				e.printStackTrace();
 			}
 			
 			// Determine external/winapi/thunk flags
@@ -603,6 +640,22 @@ public class ExtractAnalysis extends GhidraScript {
 		}
 
 		writeStatus(statusPath, "done", funcs.size(), funcs.size(), null);
+		
+		println("DEBUG: ExtractAnalysis complete!");
+		println("DEBUG: analysis.json written to " + analysisPath.getAbsolutePath());
+		
+		// Count files written
+		try {
+			int decompFiles = 0;
+			int disasmFiles = 0;
+			int pcodeFiles = 0;
+			if (decompDir.exists()) decompFiles = decompDir.listFiles().length;
+			if (disasmDir.exists()) disasmFiles = disasmDir.listFiles().length;
+			if (pcodeDir.exists()) pcodeFiles = pcodeDir.listFiles().length;
+			println("DEBUG: files written: decomp=" + decompFiles + ", disasm=" + disasmFiles + ", pcode=" + pcodeFiles);
+		} catch (Exception e) {
+			println("DEBUG: error counting files: " + e.toString());
+		}
 	}
 
 	private static String jsonStr(String s) {
