@@ -23,17 +23,54 @@ def get_exe_summary(work_dir: str, job_id: str) -> dict[str, Any]:
     
     if not exe_summary_file.exists():
         result["status"] = "not_started"
-        result["error"] = "EXE summary not yet generated. Run AI analysis first."
+        result["formatted"] = "❌ EXE summary not yet generated. Run AI analysis first."
         return result
     
     try:
         with open(exe_summary_file, "r", encoding="utf-8") as f:
-            summary = json.load(f)
-            result["summary"] = summary
+            summary_data = json.load(f)
+            
+            # Format as markdown for clean display
+            markdown_lines = []
+            
+            # Add observations if present
+            if "observations" in summary_data:
+                markdown_lines.append("## Key Observations")
+                for obs in summary_data["observations"]:
+                    if isinstance(obs, dict):
+                        title = obs.get("title", "")
+                        description = obs.get("description", "")
+                        if title:
+                            markdown_lines.append(f"- **{title}**: {description}")
+                    elif isinstance(obs, str):
+                        markdown_lines.append(f"- {obs}")
+            
+            # Add capabilities if present
+            if "capabilities" in summary_data:
+                markdown_lines.append("\n## Capabilities")
+                caps = summary_data["capabilities"]
+                if isinstance(caps, dict):
+                    for key, value in caps.items():
+                        markdown_lines.append(f"- **{key}**: {value}")
+                elif isinstance(caps, list):
+                    for cap in caps:
+                        markdown_lines.append(f"- {cap}")
+            
+            # Add any other top-level content
+            for key, value in summary_data.items():
+                if key not in ("observations", "capabilities"):
+                    if isinstance(value, (str, int, float, bool)):
+                        markdown_lines.append(f"**{key}**: {value}")
+                    elif isinstance(value, (list, dict)):
+                        markdown_lines.append(f"**{key}**: {json.dumps(value, ensure_ascii=False, indent=2)}")
+            
+            formatted = "\n".join(markdown_lines)
+            result["formatted"] = formatted
+            result["summary"] = summary_data
             result["status"] = "ok"
     except Exception as e:
         result["status"] = "error"
-        result["error"] = str(e)
+        result["formatted"] = f"❌ Error reading EXE summary: {str(e)}"
     
     return result
 
@@ -46,12 +83,19 @@ def get_job_summary(work_dir: str, job_id: str) -> dict[str, Any]:
     
     result: dict[str, Any] = {"job_id": job_id}
     
+    markdown_lines = []
+    markdown_lines.append("## Binary Summary")
+    
     # Load meta.json if exists
     if meta_file.exists():
         try:
             with open(meta_file, "r", encoding="utf-8") as f:
                 meta = json.load(f)
                 result["meta"] = meta
+                
+                # Format meta info
+                if "filename" in meta:
+                    markdown_lines.append(f"**File**: `{meta.get('filename')}`")
         except Exception as e:
             result["meta_error"] = str(e)
     
@@ -60,8 +104,14 @@ def get_job_summary(work_dir: str, job_id: str) -> dict[str, Any]:
         try:
             with open(analysis_file, "r", encoding="utf-8") as f:
                 analysis = json.load(f)
-                result["function_count"] = len(analysis.get("functions", []))
-                result["string_count"] = len(analysis.get("strings", []))
+                func_count = len(analysis.get("functions", []))
+                string_count = len(analysis.get("strings", []))
+                
+                result["function_count"] = func_count
+                result["string_count"] = string_count
+                
+                markdown_lines.append(f"**Functions**: {func_count}")
+                markdown_lines.append(f"**Strings (data section)**: {string_count}")
                 
                 sample = analysis.get("sample", {})
                 if sample:
@@ -72,9 +122,21 @@ def get_job_summary(work_dir: str, job_id: str) -> dict[str, Any]:
                         "md5": sample.get("md5"),
                         "sha256": sample.get("sha256"),
                     }
+                    
+                    # Format sample info
+                    if sample.get("arch"):
+                        markdown_lines.append(f"**Architecture**: {sample.get('arch')}")
+                    if sample.get("size"):
+                        size_mb = sample.get("size", 0) / (1024 * 1024)
+                        markdown_lines.append(f"**Size**: {size_mb:.2f} MB")
+                    if sample.get("md5"):
+                        markdown_lines.append(f"**MD5**: `{sample.get('md5')}`")
+                    if sample.get("sha256"):
+                        markdown_lines.append(f"**SHA256**: `{sample.get('sha256')}`")
         except Exception as e:
             result["analysis_error"] = str(e)
     
+    result["formatted"] = "\n".join(markdown_lines)
     return result
 
 

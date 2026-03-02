@@ -240,17 +240,24 @@ Your answer MUST follow this format using **MARKDOWN**:
 **CRITICAL**: When displaying tool results:
 - If tool result contains `"formatted"` field → **USE ONLY THAT IN EVIDENCE** (it's pre-formatted markdown)
 - Do NOT display the entire JSON structure - extract and use only the meaningful content
-- For `search_strings`: 
-  - **This tool searches BOTH data section AND inline strings by default**
-  - Display the "formatted" markdown directly
-  - Example formatted output shows both sources:
-    ```
+- Tools with `"formatted"` output:
+  - `search_strings`: "Found N matches | 📦 Data: ... | 💻 Inline: ..."
+  - `get_exe_summary`: "## Key Observations\n- ..." (clean markdown)
+  - `get_job_summary`: "## Binary Summary\n**Functions**: N\n**Architecture**: ..." (clean markdown)
+- Display the "formatted" markdown directly in your Evidence section
+- Example:
+  ```
+  ## 【Evidence】
+  - search_strings found:
     Found 3 matches for 'calc'
     📦 Data: `...`, `...`
     💻 Inline: `calc` in FUN_180001010
-    ```
-  - If user asks "only data" or "only code", request again with that filter
-- Do NOT assume search_strings only searches data section - it searches ALL strings
+  - get_exe_summary shows:
+    ## Key Observations
+    - **capability 1**: description
+    - **capability 2**: description
+  ```
+- Do NOT show raw JSON - let markdown speak for itself
 """
 
 

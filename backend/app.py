@@ -1652,9 +1652,12 @@ async def chat(req: ChatRequest):
                     # For tools with pre-formatted output, use only the relevant field
                     if tool_name == "search_strings" and isinstance(result, dict) and "formatted" in result:
                         step_tool_results.append({"tool": tool_name, "args": tool_args, "result": result.get("formatted")})
-                    elif tool_name == "get_exe_summary" and isinstance(result, dict) and "summary" in result:
-                        # Show EXE summary directly without verbose wrapper
-                        step_tool_results.append({"tool": tool_name, "args": tool_args, "result": result.get("summary")})
+                    elif tool_name == "get_exe_summary" and isinstance(result, dict) and "formatted" in result:
+                        # Show formatted EXE summary
+                        step_tool_results.append({"tool": tool_name, "args": tool_args, "result": result.get("formatted")})
+                    elif tool_name == "get_job_summary" and isinstance(result, dict) and "formatted" in result:
+                        # Show formatted job summary
+                        step_tool_results.append({"tool": tool_name, "args": tool_args, "result": result.get("formatted")})
                     else:
                         step_tool_results.append({"tool": tool_name, "args": tool_args, "result": result})
                     
