@@ -97,14 +97,14 @@ def search_functions(work_dir: str, job_id: str, query: str = "", filters: dict[
 def get_string_references(work_dir: str, job_id: str, function_id: str = "") -> dict[str, Any]:
     """Get string literals extracted from decompiled C code (including inline strings).
     
-    Reads directly from decomp/*.c files and extracts string literals using regex.
+    Reads directly from extract/decomp/*.c files and extracts string literals using regex.
     If function_id is empty, returns all string literals.
     Otherwise, returns only strings found in the specified function.
     """
     import re
     
     job_path = Path(work_dir) / job_id
-    decomp_dir = job_path / "decomp"
+    decomp_dir = job_path / "extract" / "decomp"
     
     result: dict[str, Any] = {"function_id": function_id, "source": "decompiled_code_regex"}
     
