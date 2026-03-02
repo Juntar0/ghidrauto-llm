@@ -174,10 +174,16 @@ def get_string_references(work_dir: str, job_id: str, function_id: str = "") -> 
 
 
 def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 500) -> dict[str, Any]:
-    """Search strings by value (case-insensitive substring match).
+    """Search ALL strings by value (case-insensitive substring match).
     
-    Searches both data section strings (from binary) and inline strings (from decompiled code).
-    Returns all matching strings (max 500).
+    Searches BOTH:
+    - Data section strings (from binary) 
+    - Inline strings (from decompiled C code like "calc" in WinExec("calc",0))
+    
+    Returns all matching strings with source type (data/inline) and function location info.
+    Max 500 results.
+    
+    Use this to find any string reference in the binary or code.
     """
     job_path = Path(work_dir) / job_id
     analysis_file = job_path / "extract" / "analysis.json"

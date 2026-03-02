@@ -8,21 +8,49 @@ from .storage import read_json
 
 
 def tool_search_strings(work_dir: str, job_id: str, query: str, limit: int = 50) -> dict[str, Any]:
-    base = Path(work_dir) / job_id
-    ap = base / "extract" / "analysis.json"
-    analysis = read_json(ap, {})
-    strings = analysis.get("strings") or []
-
-    q = (query or "").lower().strip()
-    out = []
-    for s in strings:
-        val = str((s or {}).get("value") or "")
-        addr = str((s or {}).get("addr") or "")
-        if not q or (q in val.lower()) or (q in addr.lower()):
-            out.append({"addr": addr, "value": val, "len": (s or {}).get("len"), "type": (s or {}).get("type")})
-        if len(out) >= max(1, min(int(limit), 200)):
-            break
-    return {"query": query, "matches": out, "count": len(out)}
+    """Search all strings (data + inline) and format nicely for LLM"""
+    from chat_tools_v2 import search_strings
+    
+    # Use the improved search_strings that includes inline strings
+    result = search_strings(work_dir, job_id, query, max(1, min(int(limit), 500)))
+    
+    # Format response for chat display
+    strings = result.get("strings", [])
+    
+    # Group by source
+    data_strings = [s for s in strings if s.get("source") == "data"]
+    inline_strings = [s for s in strings if s.get("source") == "inline"]
+    
+    # Format for pretty output
+    formatted = {
+        "query": query,
+        "summary": {
+            "total_matches": result.get("count", 0),
+            "data_section": len(data_strings),
+            "inline_code": len(inline_strings),
+        },
+        "matches": []
+    }
+    
+    # Add data section strings
+    for s in data_strings:
+        formatted["matches"].append({
+            "value": s.get("value", ""),
+            "address": s.get("address", ""),
+            "size": s.get("size", 0),
+            "source": "📦 data",
+        })
+    
+    # Add inline strings
+    for s in inline_strings:
+        formatted["matches"].append({
+            "value": s.get("value", ""),
+            "in_function": s.get("in_function", ""),
+            "size": s.get("size", 0),
+            "source": "💻 inline",
+        })
+    
+    return formatted
 
 
 def tool_list_functions(work_dir: str, job_id: str, query: str | None = None, limit: int = 50) -> dict[str, Any]:
@@ -73,12 +101,12 @@ def available_tools_schema() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "search_strings",
-                "description": "Search extracted strings for a job.",
+                "description": "Search ALL strings (both data section and inline code strings). Returns strings with source type and function location. Case-insensitive substring match.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string"},
-                        "limit": {"type": "integer", "default": 50},
+                        "query": {"type": "string", "description": "String to search for (case-insensitive substring match)"},
+                        "limit": {"type": "integer", "default": 50, "description": "Max results (default 50, max 500)"},
                     },
                     "required": ["query"],
                 },
