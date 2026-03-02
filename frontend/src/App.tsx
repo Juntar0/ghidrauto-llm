@@ -4722,7 +4722,7 @@ export default function App() {
                         )}
                       </div>
                     )}
-                    <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 13, lineHeight: 1.5, wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
                       <ReactMarkdown
                         components={{
                           p: ({ children }) => <p style={{ margin: '0.5em 0' }}>{children}</p>,
@@ -4741,9 +4741,9 @@ export default function App() {
                               </code>
                             )
                           },
-                          ul: ({ children }) => <ul style={{ margin: '0.5em 0', paddingLeft: '1.5em' }}>{children}</ul>,
-                          ol: ({ children }) => <ol style={{ margin: '0.5em 0', paddingLeft: '1.5em' }}>{children}</ol>,
-                          li: ({ children }) => <li style={{ margin: '0.3em 0' }}>{children}</li>,
+                          ul: ({ children }) => <ul style={{ margin: '0.5em 0', paddingLeft: '1.5em', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>{children}</ul>,
+                          ol: ({ children }) => <ol style={{ margin: '0.5em 0', paddingLeft: '1.5em', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>{children}</ol>,
+                          li: ({ children }) => <li style={{ margin: '0.3em 0', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>{children}</li>,
                           blockquote: ({ children }) => (
                             <blockquote style={{ borderLeft: '3px solid rgba(255,255,255,0.3)', paddingLeft: '10px', margin: '0.5em 0', opacity: 0.85 }}>
                               {children}
