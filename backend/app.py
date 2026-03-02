@@ -1648,7 +1648,13 @@ async def chat(req: ChatRequest):
                 tool_args = tc.get("args", {})
                 try:
                     result = dispatch_tool_v2(settings.work_dir, job_id, tool_name, tool_args)
-                    step_tool_results.append({"tool": tool_name, "args": tool_args, "result": result})
+                    
+                    # For search_strings, show only the formatted markdown to avoid verbose JSON
+                    if tool_name == "search_strings" and isinstance(result, dict) and "formatted" in result:
+                        step_tool_results.append({"tool": tool_name, "args": tool_args, "result": result.get("formatted")})
+                    else:
+                        step_tool_results.append({"tool": tool_name, "args": tool_args, "result": result})
+                    
                     # state sync
                     if tool_name in ("get_function_code", "get_function_overview", "run_ai_decompile"):
                         fid = tool_args.get("function_id")

@@ -231,11 +231,24 @@ Your answer MUST follow this format using **MARKDOWN**:
 - Information not present in tool results
 
 ### Tool Result Processing
-**IMPORTANT**: When you receive tool results:
-- `search_strings` and similar tools return `"result"` field with formatted markdown
-- **USE that markdown directly** in your answer - do NOT reformat tool results
-- If tool result contains markdown text, preserve its formatting exactly
-- For complex tool results, include them as-is in Evidence section
+**CRITICAL**: When displaying tool results:
+- If tool result contains `"result"` field → **USE ONLY THAT FIELD** in Evidence (it's pre-formatted markdown)
+- Do NOT display the entire JSON structure - extract and use only the meaningful content
+- For `search_strings`: display the "result" markdown directly, ignore "query"/"count"/"matches" fields
+- Example:
+  ```
+  ## 【Evidence】
+  - search_strings found:
+  
+  Found 3 matches for 'calc'
+  
+  📦 Data section (2):
+    - `value` @ 0x180000000
+  
+  💻 Inline (1):
+    - `calc` in FUN_180001010
+  ```
+  (NOT the raw JSON dict)
 """
 
 
