@@ -4732,7 +4732,7 @@ export default function App() {
                           code: (props: any) => {
                             const { inline, children } = props
                             return inline ? (
-                              <code style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace', fontSize: '0.9em' }}>
+                              <code style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace', fontSize: '0.9em', whiteSpace: 'nowrap', display: 'inline' }}>
                                 {children}
                               </code>
                             ) : (
