@@ -199,12 +199,19 @@ def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 500
         with open(analysis_file, "r", encoding="utf-8") as f:
             analysis = json.load(f)
             data_strings = analysis.get("strings", [])
-            inline_strings = analysis.get("string_references", [])
     except Exception as e:
         result["error"] = str(e)
         result["strings"] = []
         result["count"] = 0
         return result
+    
+    # Get inline strings from decompiled code
+    try:
+        inline_result = get_string_references(work_dir, job_id, "")
+        inline_strings = inline_result.get("strings", [])
+    except Exception as e:
+        inline_strings = []
+        # Don't fail if inline extraction fails
     
     results = []
     query_lower = query.lower()
@@ -588,13 +595,16 @@ TOOL_DESCRIPTIONS = """
    - GUARD: Max 50 results returned
    - Use when: User asks to "find" or "search" functions
 
-1.5. **search_strings**
-   - Purpose: Find strings in binary (case-insensitive substring match)
-   - Args: `{"query": "password", "limit": 50}` (query is case-insensitive substring match)
-   - Returns: `{"strings": [{"address": "0x401000", "value": "password", "size": 8}, ...], "count": 3, "total_strings": 500}`
+1.5. **search_strings** (SEARCHES BOTH DATA + INLINE)
+   - Purpose: Find ALL strings (data section + inline code) by value (case-insensitive substring match)
+   - Args: `{"query": "calc", "limit": 50}` (query is case-insensitive substring match)
+   - Returns: `{"strings": [...], "count": 3, "formatted": "Found 3 matches...", ...}`
    - GUARD: Max 500 results returned
-   - Use when: User asks to "find strings", "search for string", or "where is 'xxx'?"
-   - Note: Finds strings from Ghidra's Listing section (data section strings)
+   - Use when: User asks to "find strings", "search for string", "where is 'xxx'?"
+   - **IMPORTANT**: This tool searches BOTH:
+     - 📦 Data section strings (from binary)
+     - 💻 Inline strings (from decompiled C code like "calc" in WinExec("calc",0))
+   - Returns formatted markdown summary in "formatted" field showing both sources
 
 1.6. **get_string_references** (NEW!)
    - Purpose: Get ALL string literals from decompiled code (inline + data section strings)

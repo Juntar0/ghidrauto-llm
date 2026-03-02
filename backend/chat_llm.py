@@ -232,23 +232,19 @@ Your answer MUST follow this format using **MARKDOWN**:
 
 ### Tool Result Processing
 **CRITICAL**: When displaying tool results:
-- If tool result contains `"result"` field → **USE ONLY THAT FIELD** in Evidence (it's pre-formatted markdown)
+- If tool result contains `"formatted"` field → **USE ONLY THAT IN EVIDENCE** (it's pre-formatted markdown)
 - Do NOT display the entire JSON structure - extract and use only the meaningful content
-- For `search_strings`: display the "result" markdown directly, ignore "query"/"count"/"matches" fields
-- Example:
-  ```
-  ## 【Evidence】
-  - search_strings found:
-  
-  Found 3 matches for 'calc'
-  
-  📦 Data section (2):
-    - `value` @ 0x180000000
-  
-  💻 Inline (1):
-    - `calc` in FUN_180001010
-  ```
-  (NOT the raw JSON dict)
+- For `search_strings`: 
+  - **This tool searches BOTH data section AND inline strings by default**
+  - Display the "formatted" markdown directly
+  - Example formatted output shows both sources:
+    ```
+    Found 3 matches for 'calc'
+    📦 Data: `...`, `...`
+    💻 Inline: `calc` in FUN_180001010
+    ```
+  - If user asks "only data" or "only code", request again with that filter
+- Do NOT assume search_strings only searches data section - it searches ALL strings
 """
 
 
