@@ -95,15 +95,15 @@ def search_functions(work_dir: str, job_id: str, query: str = "", filters: dict[
 
 
 def get_string_references(work_dir: str, job_id: str, function_id: str = "") -> dict[str, Any]:
-    """Get string references (including inline strings) for a function or all.
+    """Get string literals extracted from decompiled code (including inline strings).
     
-    If function_id is empty, returns all string references.
-    Otherwise, returns only strings referenced from the specified function.
+    If function_id is empty, returns all string literals.
+    Otherwise, returns only strings found in the specified function.
     """
     job_path = Path(work_dir) / job_id
     refs_file = job_path / "extract" / "string_references.json"
     
-    result: dict[str, Any] = {"function_id": function_id, "source": "string_references"}
+    result: dict[str, Any] = {"function_id": function_id, "source": "decompiled_code_regex"}
     
     if not refs_file.exists():
         result["strings"] = []
@@ -135,12 +135,10 @@ def get_string_references(work_dir: str, job_id: str, function_id: str = "") -> 
         if val not in seen:
             seen.add(val)
             unique_strings.append({
-                "address": ref.get("addr"),
                 "value": val,
                 "length": ref.get("len"),
-                "referenced_from": ref.get("referenced_from"),
                 "in_function": ref.get("in_function"),
-                "ref_type": ref.get("ref_type"),
+                "source": "decompiled_code",
             })
     
     result["strings"] = unique_strings[:500]
@@ -526,12 +524,15 @@ TOOL_DESCRIPTIONS = """
    - Note: Finds strings from Ghidra's Listing section (data section strings)
 
 1.6. **get_string_references** (NEW!)
-   - Purpose: Get string references INCLUDING INLINE STRINGS in code
+   - Purpose: Get ALL string literals from decompiled code (inline + data section strings)
    - Args: `{"function_id": "FUN_00401000"}` (empty = all strings)
-   - Returns: `{"strings": [{"address": "0x...", "value": "calc", "referenced_from": "0x...", "in_function": "FUN_..."}, ...], "count": 5}`
+   - Returns: `{"strings": [{"value": "calc", "length": 4, "in_function": "FUN_..."}, ...], "count": 5}`
    - GUARD: Max 500 results returned
    - Use when: Looking for strings USED IN CODE (like "calc" in WinExec("calc",0))
-   - Difference from search_strings: Finds both data section AND inline strings referenced from instructions
+   - Method: Regex extraction from decompiled C code (reliable, headless-compatible)
+   - Difference from search_strings: 
+     - search_strings: finds data section strings only (Listing.getDefinedData)
+     - get_string_references: finds ALL string literals in decompiled code (regex pattern matching)
 
 2. **get_function_overview**
    - Purpose: Get metadata about a specific function

@@ -1,16 +1,15 @@
 // ExtractStringReferences.java
-// Extract STRING REFERENCES (including inline strings) from all code
+// Extract inline string literals from decompiled C code using regex
 //@author clawd
 //@category AutoRE
 
 import java.io.*;
 import java.util.*;
+import java.util.regex.*;
 
 import ghidra.app.script.GhidraScript;
-import ghidra.program.model.address.*;
+import ghidra.app.decompiler.*;
 import ghidra.program.model.listing.*;
-import ghidra.program.model.reference.*;
-import ghidra.program.model.symbol.RefType;
 
 public class ExtractStringReferences extends GhidraScript {
 
@@ -54,90 +53,93 @@ public class ExtractStringReferences extends GhidraScript {
 
 		File outputPath = new File(args[0]);
 
-		ReferenceManager refMgr = currentProgram.getReferenceManager();
 		FunctionManager fm = currentProgram.getFunctionManager();
-		Listing listing = currentProgram.getListing();
 
-		// Collect all string references
+		// Decompiler interface
+		DecompInterface ifc = new DecompInterface();
+		ifc.setOptions(new DecompileOptions());
+		ifc.toggleCCode(true);
+		ifc.openProgram(currentProgram);
+
+		// Regex pattern to match string literals: "..." (C-style)
+		// Handles escaped quotes: \"
+		Pattern stringPattern = Pattern.compile("\"([^\"\\\\]*(?:\\\\.[^\"\\\\]*)*)\"");
+
+		// Collect all string literals
 		Map<String, Map<String, Object>> stringMap = new LinkedHashMap<>();
 		LinkedHashSet<String> seen = new LinkedHashSet<>();
 
 		try {
-			// Iterate all instructions/data in the program
-			AddressSet addrSet = new AddressSet(currentProgram.getMinAddress(), currentProgram.getMaxAddress());
-			AddressIterator addrIter = addrSet.getAddresses(true);
+			FunctionIterator fit = fm.getFunctions(true);
+			int funcCount = 0;
+			int stringCount = 0;
 
-			int count = 0;
-			int limit = 1000000; // Safety cap
+			while (fit.hasNext()) {
+				Function f = fit.next();
+				if (f == null) continue;
+				funcCount++;
 
-			while (addrIter.hasNext() && count < limit) {
-				Address addr = addrIter.next();
-				if (addr == null) continue;
-
+				// Decompile function
+				DecompileResults res = null;
 				try {
-					// Get references FROM this address
-					Reference[] refs = refMgr.getReferencesFrom(addr);
-					if (refs == null || refs.length == 0) continue;
+					res = ifc.decompileFunction(f, 30, monitor);
+				} catch (Exception e) {
+					// Skip on decompile error
+					continue;
+				}
 
-					// Check each reference
-					for (Reference ref : refs) {
-						if (ref == null) continue;
+				if (res == null || !res.decompileCompleted()) continue;
 
-						// Only care about string references
-						// String refs are typically READ refs to data section
-						RefType rt = ref.getReferenceType();
-						if (rt == null) continue;
-
-						// Check if target looks like a string
-						Address toAddr = ref.getToAddress();
-						if (toAddr == null) continue;
-
-						// Try to read string at target address
-						String stringValue = null;
-						try {
-							// Get data at target
-							Data d = listing.getDataAt(toAddr);
-							if (d != null) {
-								Object v = d.getValue();
-								if (v instanceof String) {
-									stringValue = (String)v;
-								}
-							}
-						} catch (Exception e) {
-							// Try manual read
-						}
-
-						if (stringValue == null || !looksLikeString(stringValue)) {
-							continue;
-						}
-
-						// Found a string reference!
-						String key = toAddr.toString() + "|" + stringValue;
-						if (seen.contains(key)) continue;
-						seen.add(key);
-
-						// Get function containing this instruction
-						Function containingFunc = fm.getFunctionContaining(addr);
-						String funcName = containingFunc != null ? containingFunc.getName() : "unknown";
-
-						// Store in map
-						Map<String, Object> entry = new LinkedHashMap<>();
-						entry.put("addr", toAddr.toString());
-						entry.put("value", stringValue);
-						entry.put("len", stringValue.length());
-						entry.put("referenced_from", addr.toString());
-						entry.put("in_function", funcName);
-						entry.put("ref_type", rt.getName());
-
-						stringMap.putIfAbsent(toAddr.toString(), entry);
-						count++;
+				// Extract C code
+				String cCode = "";
+				try {
+					DecompiledFunction df = res.getDecompiledFunction();
+					if (df != null) {
+						cCode = df.getC();
 					}
 				} catch (Exception e) {
-					// Skip on error
+					// Skip
+					continue;
+				}
+
+				if (cCode == null || cCode.isEmpty()) continue;
+
+				// Find all string literals using regex
+				Matcher m = stringPattern.matcher(cCode);
+				while (m.find()) {
+					String literal = m.group(1);
+					
+					// Unescape C string escapes
+					literal = literal
+						.replace("\\\"", "\"")
+						.replace("\\\\", "\\")
+						.replace("\\n", "\n")
+						.replace("\\r", "\r")
+						.replace("\\t", "\t");
+
+					if (!looksLikeString(literal)) continue;
+
+					String key = f.getName() + "|" + literal;
+					if (seen.contains(key)) continue;
+					seen.add(key);
+
+					Map<String, Object> entry = new LinkedHashMap<>();
+					entry.put("value", literal);
+					entry.put("len", literal.length());
+					entry.put("in_function", f.getName());
+					entry.put("source", "decompiled_code");
+
+					stringMap.put(key, entry);
+					stringCount++;
 				}
 			}
+
+			println("Processed " + funcCount + " functions, found " + stringCount + " string literals");
 		} catch (Exception e) {
-			println("Error iterating addresses: " + e.toString());
+			println("Error: " + e.toString());
+			e.printStackTrace();
+		} finally {
+			ifc.closeProgram();
 		}
 
 		// Write JSON output
@@ -149,12 +151,10 @@ public class ExtractStringReferences extends GhidraScript {
 		for (int i = 0; i < entries.size(); i++) {
 			Map<String, Object> e = entries.get(i);
 			sb.append("    {");
-			sb.append("\"addr\":").append(jsonStr((String)e.get("addr"))).append(",");
 			sb.append("\"value\":").append(jsonStr((String)e.get("value"))).append(",");
 			sb.append("\"len\":").append(e.get("len")).append(",");
-			sb.append("\"referenced_from\":").append(jsonStr((String)e.get("referenced_from"))).append(",");
 			sb.append("\"in_function\":").append(jsonStr((String)e.get("in_function"))).append(",");
-			sb.append("\"ref_type\":").append(jsonStr((String)e.get("ref_type")));
+			sb.append("\"source\":").append(jsonStr((String)e.get("source")));
 			sb.append("}");
 			if (i != entries.size() - 1) sb.append(",");
 			sb.append("\n");
@@ -169,6 +169,6 @@ public class ExtractStringReferences extends GhidraScript {
 			w.write(sb.toString());
 		}
 
-		println("Extracted " + stringMap.size() + " string references to: " + outputPath.getAbsolutePath());
+		println("Extracted " + stringMap.size() + " string literals to: " + outputPath.getAbsolutePath());
 	}
 }
