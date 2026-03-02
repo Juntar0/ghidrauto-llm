@@ -94,6 +94,61 @@ def search_functions(work_dir: str, job_id: str, query: str = "", filters: dict[
     return results[:limit]
 
 
+def get_string_references(work_dir: str, job_id: str, function_id: str = "") -> dict[str, Any]:
+    """Get string references (including inline strings) for a function or all.
+    
+    If function_id is empty, returns all string references.
+    Otherwise, returns only strings referenced from the specified function.
+    """
+    job_path = Path(work_dir) / job_id
+    refs_file = job_path / "extract" / "string_references.json"
+    
+    result: dict[str, Any] = {"function_id": function_id, "source": "string_references"}
+    
+    if not refs_file.exists():
+        result["strings"] = []
+        result["count"] = 0
+        result["error"] = "string_references.json not found (re-extract the binary)"
+        return result
+    
+    try:
+        with open(refs_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            all_refs = data.get("string_references", [])
+    except Exception as e:
+        result["error"] = str(e)
+        result["strings"] = []
+        result["count"] = 0
+        return result
+    
+    # Filter by function if specified
+    if function_id:
+        filtered = [r for r in all_refs if r.get("in_function") == function_id]
+    else:
+        filtered = all_refs
+    
+    # Remove duplicates by value
+    seen = set()
+    unique_strings = []
+    for ref in filtered:
+        val = ref.get("value")
+        if val not in seen:
+            seen.add(val)
+            unique_strings.append({
+                "address": ref.get("addr"),
+                "value": val,
+                "length": ref.get("len"),
+                "referenced_from": ref.get("referenced_from"),
+                "in_function": ref.get("in_function"),
+                "ref_type": ref.get("ref_type"),
+            })
+    
+    result["strings"] = unique_strings[:500]
+    result["count"] = len(unique_strings)
+    result["total"] = len(all_refs)
+    return result
+
+
 def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 500) -> dict[str, Any]:
     """Search strings by value (case-insensitive substring match). Returns all matching strings (max 500)."""
     job_path = Path(work_dir) / job_id
@@ -421,6 +476,7 @@ TOOL_REGISTRY = {
     "get_job_summary": get_job_summary,
     "search_functions": search_functions,
     "search_strings": search_strings,
+    "get_string_references": get_string_references,
     "get_function_overview": get_function_overview,
     "get_function_code": get_function_code,
     "get_xrefs": get_xrefs,
@@ -461,12 +517,21 @@ TOOL_DESCRIPTIONS = """
    - GUARD: Max 50 results returned
    - Use when: User asks to "find" or "search" functions
 
-1.5. **search_strings** (NEW)
+1.5. **search_strings**
    - Purpose: Find strings in binary (case-insensitive substring match)
    - Args: `{"query": "password", "limit": 50}` (query is case-insensitive substring match)
    - Returns: `{"strings": [{"address": "0x401000", "value": "password", "size": 8}, ...], "count": 3, "total_strings": 500}`
-   - GUARD: Max 50 results returned
+   - GUARD: Max 500 results returned
    - Use when: User asks to "find strings", "search for string", or "where is 'xxx'?"
+   - Note: Finds strings from Ghidra's Listing section (data section strings)
+
+1.6. **get_string_references** (NEW!)
+   - Purpose: Get string references INCLUDING INLINE STRINGS in code
+   - Args: `{"function_id": "FUN_00401000"}` (empty = all strings)
+   - Returns: `{"strings": [{"address": "0x...", "value": "calc", "referenced_from": "0x...", "in_function": "FUN_..."}, ...], "count": 5}`
+   - GUARD: Max 500 results returned
+   - Use when: Looking for strings USED IN CODE (like "calc" in WinExec("calc",0))
+   - Difference from search_strings: Finds both data section AND inline strings referenced from instructions
 
 2. **get_function_overview**
    - Purpose: Get metadata about a specific function

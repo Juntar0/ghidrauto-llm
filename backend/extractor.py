@@ -96,6 +96,28 @@ def run_ghidra_extract(
     if not ap.exists():
         raise RuntimeError("analysis.json missing after extract; see ghidra.log")
 
+    # Also extract string references (including inline strings)
+    log_path_refs = paths["extract"] / "ghidra_refs.log"
+    try:
+        _run_analyze_headless(
+            analyze_headless=analyze_headless,
+            project_root=project_root,
+            project_name=project_name,
+            scripts_dir=scripts_dir,
+            timeout_seconds=timeout_seconds,
+            log_path=log_path_refs,
+            args=[
+                "-postScript",
+                "ExtractStringReferences.java",
+                str(paths["extract"] / "string_references.json"),
+            ],
+        )
+    except Exception as e:
+        # Non-fatal: string references extraction is optional
+        print(f"Warning: string references extraction failed: {e}")
+        # Create empty file for consistency
+        (paths["extract"] / "string_references.json").write_text('{"string_references": [], "total_count": 0}')
+
 
 def run_capa_analysis(
     *,
