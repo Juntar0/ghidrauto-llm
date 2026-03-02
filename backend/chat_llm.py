@@ -116,11 +116,14 @@ You MUST output ONLY one of these two formats:
 **User: "エントリポイント関数について"**
 → `{"thought": "entryで検索してエントリポイントを探す", "tool_calls": [{"tool": "search_functions", "args": {"query": "entry"}}]}`
 
-**User: "このバイナリは何？"** or **"EXE summary を見せてください"**
-→ `{"thought": "バイナリ/EXEの概要を取得する", "tool_calls": [{"tool": "get_job_summary", "args": {}}]}`
+**User: "EXE summary を見せてください"** or **"What is this binary?"**
+→ `{"thought": "UI の EXE Summary と同じ AI分析結果を取得する", "tool_calls": [{"tool": "get_exe_summary", "args": {}}]}`
 
-**User: "ファイルの詳細情報を教えて"** or **"アーキテクチャ、サイズを知りたい"**
-→ `{"thought": "EXE/バイナリのメタデータを取得", "tool_calls": [{"tool": "get_job_summary", "args": {}}]}`
+**User: "概要を教えて"** or **"高レベルの分析は？"**
+→ `{"thought": "EXE Summary を表示する", "tool_calls": [{"tool": "get_exe_summary", "args": {}}]}`
+
+**User: "このバイナリは何？"** or **"ファイルの詳細情報を教えて"**
+→ `{"thought": "ファイルのメタデータと関数数を取得", "tool_calls": [{"tool": "get_job_summary", "args": {}}]}`
 """
 
 # ReAct (Planner / Executor / Verifier) prompts

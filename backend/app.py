@@ -1649,9 +1649,12 @@ async def chat(req: ChatRequest):
                 try:
                     result = dispatch_tool_v2(settings.work_dir, job_id, tool_name, tool_args)
                     
-                    # For search_strings, show only the formatted markdown to avoid verbose JSON
+                    # For tools with pre-formatted output, use only the relevant field
                     if tool_name == "search_strings" and isinstance(result, dict) and "formatted" in result:
                         step_tool_results.append({"tool": tool_name, "args": tool_args, "result": result.get("formatted")})
+                    elif tool_name == "get_exe_summary" and isinstance(result, dict) and "summary" in result:
+                        # Show EXE summary directly without verbose wrapper
+                        step_tool_results.append({"tool": tool_name, "args": tool_args, "result": result.get("summary")})
                     else:
                         step_tool_results.append({"tool": tool_name, "args": tool_args, "result": result})
                     

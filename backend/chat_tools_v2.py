@@ -10,6 +10,34 @@ from .memory_peek import memory_view
 from .pe_exports import parse_pe_exports
 
 
+def get_exe_summary(work_dir: str, job_id: str) -> dict[str, Any]:
+    """Get EXE/DLL summary from AI analysis (high-level overview).
+    
+    This is the same summary shown in UI's EXE Summary panel.
+    Returns AI-generated summary with key observations, capabilities, etc.
+    """
+    job_path = Path(work_dir) / job_id
+    exe_summary_file = job_path / "ai" / "exe_summary.json"
+    
+    result: dict[str, Any] = {"job_id": job_id}
+    
+    if not exe_summary_file.exists():
+        result["status"] = "not_started"
+        result["error"] = "EXE summary not yet generated. Run AI analysis first."
+        return result
+    
+    try:
+        with open(exe_summary_file, "r", encoding="utf-8") as f:
+            summary = json.load(f)
+            result["summary"] = summary
+            result["status"] = "ok"
+    except Exception as e:
+        result["status"] = "error"
+        result["error"] = str(e)
+    
+    return result
+
+
 def get_job_summary(work_dir: str, job_id: str) -> dict[str, Any]:
     """Get high-level job summary (file name, arch, function count, etc.)."""
     job_path = Path(work_dir) / job_id
@@ -551,6 +579,7 @@ def save_annotation(work_dir: str, job_id: str, target: str, content: str) -> di
 
 
 TOOL_REGISTRY = {
+    "get_exe_summary": get_exe_summary,
     "get_job_summary": get_job_summary,
     "search_functions": search_functions,
     "search_strings": search_strings,
@@ -587,6 +616,16 @@ TOOL_DESCRIPTIONS = """
    - Use when: DLL analysis; exported functions are real entrypoints
 
 ### Core Tools (Information Retrieval)
+
+0. **get_exe_summary** (EXE SUMMARY - from UI)
+   - Purpose: Get AI-generated EXE/DLL summary (same as UI's EXE Summary button)
+   - Args: `{}` (no args needed)
+   - Returns: `{"summary": {...AI observations...}, "status": "ok"}`
+   - Use when: User asks:
+     - "EXE summary" / "Show EXE summary"
+     - "What is the overall purpose of this binary?"
+     - "高レベルの分析" / "概要"
+   - **NOTE**: Requires AI analysis to be completed first (check UI EXE Summary button)
 
 1. **search_functions**
    - Purpose: Find functions by name (partial match)
