@@ -371,15 +371,14 @@ async def get_analysis(job_id: str):
     
     result = read_json(ap, {})
     
-    # Also include string_references if available
-    job_path = Path(settings.work_dir) / job_id
-    refs_file = job_path / "extract" / "string_references.json"
-    if refs_file.exists():
-        try:
-            refs_data = read_json(refs_file, {})
-            result["string_references"] = refs_data.get("string_references", [])
-        except Exception:
-            pass
+    # Also include string_references extracted from decompiled code
+    try:
+        refs_result = dispatch_tool_v2(settings.work_dir, job_id, "get_string_references", {})
+        if refs_result and "strings" in refs_result:
+            result["string_references"] = refs_result.get("strings", [])
+    except Exception:
+        # If extraction fails, just omit string_references
+        pass
     
     return JSONResponse(result)
 

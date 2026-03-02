@@ -95,26 +95,66 @@ def search_functions(work_dir: str, job_id: str, query: str = "", filters: dict[
 
 
 def get_string_references(work_dir: str, job_id: str, function_id: str = "") -> dict[str, Any]:
-    """Get string literals extracted from decompiled code (including inline strings).
+    """Get string literals extracted from decompiled C code (including inline strings).
     
+    Reads directly from decomp/*.c files and extracts string literals using regex.
     If function_id is empty, returns all string literals.
     Otherwise, returns only strings found in the specified function.
     """
+    import re
+    
     job_path = Path(work_dir) / job_id
-    refs_file = job_path / "extract" / "string_references.json"
+    decomp_dir = job_path / "decomp"
     
     result: dict[str, Any] = {"function_id": function_id, "source": "decompiled_code_regex"}
     
-    if not refs_file.exists():
+    if not decomp_dir.exists():
         result["strings"] = []
         result["count"] = 0
-        result["error"] = "string_references.json not found (re-extract the binary)"
+        result["error"] = "decomp directory not found (re-extract the binary)"
         return result
     
+    # Regex to match string literals: "..." (handles escaped quotes)
+    string_pattern = re.compile(r'"([^"\\]*(?:\\.[^"\\]*)*)"')
+    
+    # Collect all string literals from decompiled code
+    all_strings = []
+    seen = set()
+    
     try:
-        with open(refs_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            all_refs = data.get("string_references", [])
+        # Iterate all .c files in decomp directory
+        for c_file in sorted(decomp_dir.glob("*.c")):
+            func_name = c_file.stem  # sanitized function name
+            
+            try:
+                with open(c_file, "r", encoding="utf-8", errors="replace") as f:
+                    code = f.read()
+            except Exception:
+                continue
+            
+            # Find all string literals
+            for match in string_pattern.finditer(code):
+                literal = match.group(1)
+                
+                # Unescape C string escapes
+                try:
+                    literal = literal.replace('\\\"', '"').replace('\\\\', '\\').replace('\\n', '\n').replace('\\r', '\r').replace('\\t', '\t')
+                except Exception:
+                    pass
+                
+                # Basic check: looks like a string
+                if len(literal) < 1 or len(literal) > 4096:
+                    continue
+                
+                key = (func_name, literal)
+                if key not in seen:
+                    seen.add(key)
+                    all_strings.append({
+                        "value": literal,
+                        "length": len(literal),
+                        "in_function": func_name,
+                        "source": "decompiled_code",
+                    })
     except Exception as e:
         result["error"] = str(e)
         result["strings"] = []
@@ -123,27 +163,13 @@ def get_string_references(work_dir: str, job_id: str, function_id: str = "") -> 
     
     # Filter by function if specified
     if function_id:
-        filtered = [r for r in all_refs if r.get("in_function") == function_id]
+        filtered = [s for s in all_strings if s.get("in_function") == function_id]
     else:
-        filtered = all_refs
+        filtered = all_strings
     
-    # Remove duplicates by value
-    seen = set()
-    unique_strings = []
-    for ref in filtered:
-        val = ref.get("value")
-        if val not in seen:
-            seen.add(val)
-            unique_strings.append({
-                "value": val,
-                "length": ref.get("len"),
-                "in_function": ref.get("in_function"),
-                "source": "decompiled_code",
-            })
-    
-    result["strings"] = unique_strings[:500]
-    result["count"] = len(unique_strings)
-    result["total"] = len(all_refs)
+    result["strings"] = filtered[:500]
+    result["count"] = len(filtered)
+    result["total"] = len(all_strings)
     return result
 
 
