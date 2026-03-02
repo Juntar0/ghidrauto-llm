@@ -352,21 +352,21 @@ def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 500
     result["total_inline"] = len(inline_strings)
     result["total"] = len(data_strings) + len(inline_strings)
     
-    # Add compact formatted markdown for display - NO NEWLINES AT ALL
+    # Add compact formatted text - NO NEWLINES, NO MARKDOWN
     data_results = [r for r in results if r.get("source") == "data"]
     inline_results = [r for r in results if r.get("source") == "inline"]
     
-    # Build as plain text without markdown (backticks cause issues in ReactMarkdown)
+    # Build as single line without any newlines
     parts = [f"Found {len(results)} matches for \"{query}\""]
     if data_results:
-        data_items = " | ".join([f"{r.get('value', '')}" for r in data_results])
-        parts.append(f"📦 Data: {data_items}")
+        data_items = ", ".join([f"{r.get('value', '')}" for r in data_results])
+        parts.append(f"Data: {data_items}")
     if inline_results:
-        inline_items = " | ".join([f"{r.get('value', '')} in {r.get('in_function', '')}" for r in inline_results])
-        parts.append(f"💻 Inline: {inline_items}")
+        inline_items = ", ".join([f"{r.get('value', '')} in {r.get('in_function', '')}" for r in inline_results])
+        parts.append(f"Inline: {inline_items}")
     
-    # Single line, no markdown formatting
-    markdown_text = " | ".join(parts)
+    # Single line, no newlines anywhere
+    markdown_text = " | ".join(parts).replace("\n", " ").replace("\r", "").strip()
     
     result["formatted"] = markdown_text
     return result
