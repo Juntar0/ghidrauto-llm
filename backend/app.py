@@ -376,9 +376,8 @@ async def get_analysis(job_id: str):
     refs_file = job_path / "extract" / "string_references.json"
     if refs_file.exists():
         try:
-            with open(refs_file, "r", encoding="utf-8") as f:
-                refs_data = json.load(f)
-                result["string_references"] = refs_data.get("string_references", [])
+            refs_data = read_json(refs_file, {})
+            result["string_references"] = refs_data.get("string_references", [])
         except Exception:
             pass
     
