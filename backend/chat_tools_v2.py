@@ -174,7 +174,11 @@ def get_string_references(work_dir: str, job_id: str, function_id: str = "") -> 
 
 
 def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 500) -> dict[str, Any]:
-    """Search strings by value (case-insensitive substring match). Returns all matching strings (max 500)."""
+    """Search strings by value (case-insensitive substring match).
+    
+    Searches both data section strings (from binary) and inline strings (from decompiled code).
+    Returns all matching strings (max 500).
+    """
     job_path = Path(work_dir) / job_id
     analysis_file = job_path / "extract" / "analysis.json"
     
@@ -188,7 +192,8 @@ def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 500
     try:
         with open(analysis_file, "r", encoding="utf-8") as f:
             analysis = json.load(f)
-            strings = analysis.get("strings", [])
+            data_strings = analysis.get("strings", [])
+            inline_strings = analysis.get("string_references", [])
     except Exception as e:
         result["error"] = str(e)
         result["strings"] = []
@@ -198,20 +203,40 @@ def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 500
     results = []
     query_lower = query.lower()
     
-    for s in strings:
+    # Search data section strings (from binary)
+    for s in data_strings:
         value = s.get("value", "")
-        # Field name is "addr" not "address"
         addr = s.get("addr", "")
         
-        # Simple query match (case-insensitive substring)
+        # Case-insensitive substring match
         if query:
             if query_lower not in value.lower():
                 continue
         
         results.append({
-            "address": addr,
             "value": value,
+            "address": addr,
             "size": len(value),
+            "source": "data",
+            "in_function": None,
+        })
+    
+    # Search inline strings (from decompiled code)
+    for s in inline_strings:
+        value = s.get("value", "")
+        in_function = s.get("in_function", "")
+        
+        # Case-insensitive substring match
+        if query:
+            if query_lower not in value.lower():
+                continue
+        
+        results.append({
+            "value": value,
+            "address": None,
+            "size": s.get("length", len(value)),
+            "source": "inline",
+            "in_function": in_function,
         })
     
     # Enforce limit (max 500 to avoid huge responses)
@@ -220,7 +245,9 @@ def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 500
     
     result["strings"] = results[:limit]
     result["count"] = len(results)
-    result["total_strings"] = len(strings)
+    result["total_data"] = len(data_strings)
+    result["total_inline"] = len(inline_strings)
+    result["total"] = len(data_strings) + len(inline_strings)
     return result
 
 
