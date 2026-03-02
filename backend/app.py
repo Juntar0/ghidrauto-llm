@@ -372,7 +372,7 @@ async def get_analysis(job_id: str):
     result = read_json(ap, {})
     
     # Also include string_references if available
-    job_path = Path(WORK_DIR) / job_id
+    job_path = Path(settings.work_dir) / job_id
     refs_file = job_path / "extract" / "string_references.json"
     if refs_file.exists():
         try:
