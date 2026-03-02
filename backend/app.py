@@ -368,7 +368,21 @@ async def get_analysis(job_id: str):
     ap = _analysis_path(job_id)
     if not ap.exists():
         return JSONResponse({"status": "analyzing"}, status_code=202)
-    return JSONResponse(read_json(ap, {}))
+    
+    result = read_json(ap, {})
+    
+    # Also include string_references if available
+    job_path = Path(WORK_DIR) / job_id
+    refs_file = job_path / "extract" / "string_references.json"
+    if refs_file.exists():
+        try:
+            with open(refs_file, "r", encoding="utf-8") as f:
+                refs_data = json.load(f)
+                result["string_references"] = refs_data.get("string_references", [])
+        except Exception:
+            pass
+    
+    return JSONResponse(result)
 
 
 @app.get("/api/jobs/{job_id}/memory/view")

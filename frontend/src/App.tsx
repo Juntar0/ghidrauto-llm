@@ -120,6 +120,7 @@ type Analysis = {
   sample?: { entry_point?: string; image_base?: string; path?: string }
   ui?: { default_function_id?: string }
   strings?: Array<{ addr: string; value: string; len?: number; type?: string | null }>
+  string_references?: Array<{ value: string; length?: number; in_function?: string; source?: string }>
   functions?: Array<{
     id: string
     name: string
@@ -4007,8 +4008,7 @@ export default function App() {
               <div>
                 <h3 style={{ margin: 0, fontSize: 18 }}>Strings</h3>
                 <div className='secondary' style={{ fontSize: 12, marginTop: 4 }}>
-                  extracted from Ghidra defined data ({analysis?.strings?.length ?? 0})
-                  {analysis?.strings?.length && analysis.strings.length >= 50000 ? ' (capped at 50k)' : ''}
+                  Data section: {analysis?.strings?.length ?? 0} | Inline (from code): {analysis?.string_references?.length ?? 0}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -4046,52 +4046,74 @@ export default function App() {
             </div>
 
             <div style={{ padding: 20, overflow: 'auto' }}>
-              {(analysis?.strings ?? [])
-                .filter((s) => {
-                  const q = stringQuery.trim().toLowerCase()
-                  const v = String(s.value ?? '')
-                  const a = String(s.addr ?? '')
-                  const len = Number(s.len ?? v.length ?? 0)
+              {/* Combined data section + inline strings */}
+              {(() => {
+                const dataStrings = (analysis?.strings ?? []).map((s: any) => ({ ...s, source: 'data', len: s.len, addr: s.addr }))
+                const inlineStrings = (analysis?.string_references ?? []).map((s: any) => ({ ...s, source: 'inline', len: s.length }))
+                const combined = [...dataStrings, ...inlineStrings]
 
-                  if (q && !v.toLowerCase().includes(q) && !a.toLowerCase().includes(q)) return false
+                return combined
+                  .filter((s) => {
+                    const q = stringQuery.trim().toLowerCase()
+                    const v = String(s.value ?? '')
+                    const a = String(s.addr ?? '')
+                    const len = Number(s.len ?? s.length ?? v.length ?? 0)
 
-                  const minL = Math.max(0, Number(stringMinLen || 0))
-                  const maxL = Math.max(0, Number(stringMaxLen || 0))
-                  if (minL > 0 && len < minL) return false
-                  if (maxL > 0 && len > maxL) return false
+                    if (q && !v.toLowerCase().includes(q) && !a.toLowerCase().includes(q)) return false
 
-                  return true
-                })
-                .map((s, i) => (
-                  <div
-                    key={`str-${i}-${s.addr}`}
-                    className='fnItem'
-                    style={{
-                      padding: '10px 12px',
-                      display: 'block', // override .fnItem grid layout (which pushes the 2nd child to the right column)
-                      cursor: 'default',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                      <div
-                        style={{
-                          fontFamily: 'monospace',
-                          color: '#fbbf24',
-                          cursor: 'pointer',
-                          textDecoration: 'underline',
-                        }}
-                        onClick={() => {
-                          setMemoryAddr(s.addr)
-                          setShowMemory(true)
-                        }}
-                        title='Open in Memory View'
-                      >
-                        {s.addr}
+                    const minL = Math.max(0, Number(stringMinLen || 0))
+                    const maxL = Math.max(0, Number(stringMaxLen || 0))
+                    if (minL > 0 && len < minL) return false
+                    if (maxL > 0 && len > maxL) return false
+
+                    return true
+                  })
+                  .map((s, i) => (
+                    <div
+                      key={`str-${i}-${s.addr}-${s.source}`}
+                      className='fnItem'
+                      style={{
+                        padding: '10px 12px',
+                        display: 'block',
+                        cursor: 'default',
+                        borderLeft: s.source === 'inline' ? '3px solid #60a5fa' : '3px solid rgba(255,255,255,0.1)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          {s.addr && (
+                            <div
+                              style={{
+                                fontFamily: 'monospace',
+                                color: '#fbbf24',
+                                cursor: 'pointer',
+                                textDecoration: 'underline',
+                                fontSize: 12,
+                              }}
+                              onClick={() => {
+                                setMemoryAddr(s.addr)
+                                setShowMemory(true)
+                              }}
+                              title='Open in Memory View'
+                            >
+                              {s.addr}
+                            </div>
+                          )}
+                          {s.source === 'inline' && (
+                            <span style={{ fontSize: 10, color: '#60a5fa', padding: '2px 6px', background: 'rgba(96, 165, 250, 0.1)', borderRadius: 4 }}>
+                              inline
+                            </span>
+                          )}
+                          {s.in_function && (
+                            <span style={{ fontSize: 10, color: '#a5f06c', padding: '2px 6px', background: 'rgba(165, 240, 108, 0.1)', borderRadius: 4 }}>
+                              {s.in_function}
+                            </span>
+                          )}
+                        </div>
+                        <div className='secondary' style={{ fontSize: 12, textAlign: 'right' }}>
+                          {s.len != null ? `${s.len} chars` : ''} {s.type ? `• ${s.type}` : ''}
+                        </div>
                       </div>
-                      <div className='secondary' style={{ fontSize: 12 }}>
-                        {s.len != null ? `${s.len} chars` : ''} {s.type ? `• ${s.type}` : ''}
-                      </div>
-                    </div>
                     <div
                       style={{
                         marginTop: 6,
@@ -4104,8 +4126,9 @@ export default function App() {
                       {s.value}
                     </div>
                   </div>
-                ))}
-              {!analysis?.strings?.length ? <div className='secondary'>No strings. Re-extract needed.</div> : null}
+                ))
+              })()}
+              {!analysis?.strings?.length && !analysis?.string_references?.length ? <div className='secondary'>No strings. Re-extract needed.</div> : null}
             </div>
           </div>
         </div>
