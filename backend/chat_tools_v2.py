@@ -629,11 +629,16 @@ TOOL_DESCRIPTIONS = """
    - Returns: `{"pseudocode": "int main() {...}", "proposed_name": "main", "signature": "int(int, char**)"}`
    - Use when: User asks to "see code" or "show" function content
 
-4. **get_job_summary**
-   - Purpose: Get high-level binary info
+4. **get_job_summary** (EXE/DLL SUMMARY)
+   - Purpose: Get high-level binary/EXE summary (metadata, function count, string count, architecture)
    - Args: `{}` (no args needed)
-   - Returns: `{"function_count": 150, "string_count": 500, "meta": {...}}`
-   - Use when: User asks "what is this binary?" or needs overview
+   - Returns: `{"function_count": 150, "string_count": 500, "sample": {"arch": "x86-64", "size": 123456, "sha256": "..."}, "meta": {...}}`
+   - Use when: User asks:
+     - "What is this binary?"
+     - "EXE summary" or "file summary"
+     - "Architecture?" or "File size?"
+     - "What does the binary contain?"
+   - Shows: file path, architecture (x86/x64), file size, function/string counts, hashes
 
 5. **get_xrefs** (placeholder)
    - Purpose: Get cross-references to/from a target
