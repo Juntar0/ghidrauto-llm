@@ -121,7 +121,8 @@ def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 50)
     
     for s in strings:
         value = s.get("value", "")
-        addr = s.get("address", "")
+        # Field name is "addr" not "address"
+        addr = s.get("addr", "")
         
         # Simple query match (case-insensitive substring)
         if query:
