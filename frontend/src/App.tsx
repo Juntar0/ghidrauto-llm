@@ -18,6 +18,7 @@ import cpp from 'highlight.js/lib/languages/cpp'
 import x86asm from 'highlight.js/lib/languages/x86asm'
 import 'highlight.js/styles/github-dark.css'
 import MemoryView from './MemoryView'
+import ReactMarkdown from 'react-markdown'
 
 hljs.registerLanguage('cpp', cpp)
 hljs.registerLanguage('x86asm', x86asm)
@@ -4662,7 +4663,38 @@ export default function App() {
                         )}
                       </div>
                     )}
-                    <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                    <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+                      <ReactMarkdown
+                        components={{
+                          p: ({ children }) => <p style={{ margin: '0.5em 0' }}>{children}</p>,
+                          h1: ({ children }) => <h1 style={{ margin: '0.8em 0 0.4em', fontSize: '1.4em' }}>{children}</h1>,
+                          h2: ({ children }) => <h2 style={{ margin: '0.7em 0 0.3em', fontSize: '1.2em' }}>{children}</h2>,
+                          h3: ({ children }) => <h3 style={{ margin: '0.6em 0 0.2em', fontSize: '1.1em' }}>{children}</h3>,
+                          code: (props: any) => {
+                            const { inline, children } = props
+                            return inline ? (
+                              <code style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace', fontSize: '0.9em' }}>
+                                {children}
+                              </code>
+                            ) : (
+                              <code style={{ display: 'block', background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: 6, fontFamily: 'monospace', fontSize: '0.85em', overflowX: 'auto', margin: '0.5em 0' }}>
+                                {children}
+                              </code>
+                            )
+                          },
+                          ul: ({ children }) => <ul style={{ margin: '0.5em 0', paddingLeft: '1.5em' }}>{children}</ul>,
+                          ol: ({ children }) => <ol style={{ margin: '0.5em 0', paddingLeft: '1.5em' }}>{children}</ol>,
+                          li: ({ children }) => <li style={{ margin: '0.3em 0' }}>{children}</li>,
+                          blockquote: ({ children }) => (
+                            <blockquote style={{ borderLeft: '3px solid rgba(255,255,255,0.3)', paddingLeft: '10px', margin: '0.5em 0', opacity: 0.85 }}>
+                              {children}
+                            </blockquote>
+                          ),
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
                     {showChatDebug && msg.debug && msg.debug.tool_count > 0 && (
                       <div style={{ marginTop: 8, padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: 6, fontSize: 11, wordBreak: 'break-all' }}>
                         <div className='secondary' style={{ fontWeight: 600, marginBottom: 4 }}>🔧 Tools used ({msg.debug.tool_count}):</div>
