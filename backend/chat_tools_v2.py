@@ -94,8 +94,8 @@ def search_functions(work_dir: str, job_id: str, query: str = "", filters: dict[
     return results[:limit]
 
 
-def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 50) -> dict[str, Any]:
-    """Search strings by value (case-insensitive substring match). Returns list of matching strings (max 50)."""
+def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 500) -> dict[str, Any]:
+    """Search strings by value (case-insensitive substring match). Returns all matching strings (max 500)."""
     job_path = Path(work_dir) / job_id
     analysis_file = job_path / "extract" / "analysis.json"
     
@@ -135,9 +135,9 @@ def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 50)
             "size": len(value),
         })
     
-    # Enforce limit (max 50)
-    if limit > 50:
-        limit = 50
+    # Enforce limit (max 500 to avoid huge responses)
+    if limit > 500:
+        limit = 500
     
     result["strings"] = results[:limit]
     result["count"] = len(results)
