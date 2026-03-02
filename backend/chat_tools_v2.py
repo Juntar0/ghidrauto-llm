@@ -94,6 +94,56 @@ def search_functions(work_dir: str, job_id: str, query: str = "", filters: dict[
     return results[:limit]
 
 
+def search_strings(work_dir: str, job_id: str, query: str = "", limit: int = 50) -> dict[str, Any]:
+    """Search strings by value (case-insensitive substring match). Returns list of matching strings (max 50)."""
+    job_path = Path(work_dir) / job_id
+    analysis_file = job_path / "extract" / "analysis.json"
+    
+    result: dict[str, Any] = {"query": query, "limit": limit}
+    
+    if not analysis_file.exists():
+        result["strings"] = []
+        result["count"] = 0
+        return result
+    
+    try:
+        with open(analysis_file, "r", encoding="utf-8") as f:
+            analysis = json.load(f)
+            strings = analysis.get("strings", [])
+    except Exception as e:
+        result["error"] = str(e)
+        result["strings"] = []
+        result["count"] = 0
+        return result
+    
+    results = []
+    query_lower = query.lower()
+    
+    for s in strings:
+        value = s.get("value", "")
+        addr = s.get("address", "")
+        
+        # Simple query match (case-insensitive substring)
+        if query:
+            if query_lower not in value.lower():
+                continue
+        
+        results.append({
+            "address": addr,
+            "value": value,
+            "size": len(value),
+        })
+    
+    # Enforce limit (max 50)
+    if limit > 50:
+        limit = 50
+    
+    result["strings"] = results[:limit]
+    result["count"] = len(results)
+    result["total_strings"] = len(strings)
+    return result
+
+
 def get_function_overview(work_dir: str, job_id: str, function_id: str) -> dict[str, Any]:
     """Get function overview (addr, size, calls, strings, AI status)."""
     job_path = Path(work_dir) / job_id
@@ -369,6 +419,7 @@ def save_annotation(work_dir: str, job_id: str, target: str, content: str) -> di
 TOOL_REGISTRY = {
     "get_job_summary": get_job_summary,
     "search_functions": search_functions,
+    "search_strings": search_strings,
     "get_function_overview": get_function_overview,
     "get_function_code": get_function_code,
     "get_xrefs": get_xrefs,
@@ -408,6 +459,13 @@ TOOL_DESCRIPTIONS = """
    - Returns: `[{"name": "FUN_00401000", "address": "0x401000", "size": 256, "entry": false}, ...]`
    - GUARD: Max 50 results returned
    - Use when: User asks to "find" or "search" functions
+
+1.5. **search_strings** (NEW)
+   - Purpose: Find strings in binary (case-insensitive substring match)
+   - Args: `{"query": "password", "limit": 50}` (query is case-insensitive substring match)
+   - Returns: `{"strings": [{"address": "0x401000", "value": "password", "size": 8}, ...], "count": 3, "total_strings": 500}`
+   - GUARD: Max 50 results returned
+   - Use when: User asks to "find strings", "search for string", or "where is 'xxx'?"
 
 2. **get_function_overview**
    - Purpose: Get metadata about a specific function
