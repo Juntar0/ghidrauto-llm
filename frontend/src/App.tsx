@@ -4105,7 +4105,35 @@ export default function App() {
                             </span>
                           )}
                           {s.in_function && (
-                            <span style={{ fontSize: 10, color: '#a5f06c', padding: '2px 6px', background: 'rgba(165, 240, 108, 0.1)', borderRadius: 4 }}>
+                            <span
+                              style={{
+                                fontSize: 10,
+                                color: '#a5f06c',
+                                padding: '2px 6px',
+                                background: 'rgba(165, 240, 108, 0.1)',
+                                borderRadius: 4,
+                                cursor: 'pointer',
+                                textDecoration: 'underline',
+                                transition: 'all 0.2s',
+                              }}
+                              onClick={() => {
+                                // Find the function_id matching this function name
+                                const func = analysis?.functions?.find(
+                                  (f) => f.name === s.in_function || f.id === s.in_function
+                                )
+                                if (func) {
+                                  setSelected(func.id)
+                                  setShowStrings(false)
+                                }
+                              }}
+                              title={`Go to ${s.in_function}`}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'rgba(165, 240, 108, 0.3)'
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(165, 240, 108, 0.1)'
+                              }}
+                            >
                               {s.in_function}
                             </span>
                           )}
