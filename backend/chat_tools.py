@@ -21,36 +21,30 @@ def tool_search_strings(work_dir: str, job_id: str, query: str, limit: int = 50)
     data_strings = [s for s in strings if s.get("source") == "data"]
     inline_strings = [s for s in strings if s.get("source") == "inline"]
     
-    # Format for pretty output
-    formatted = {
+    # Build compact markdown output
+    markdown_lines = []
+    markdown_lines.append(f"**Found {result.get('count', 0)} matches for `{query}`**")
+    
+    if data_strings:
+        markdown_lines.append(f"\n📦 **Data section** ({len(data_strings)}):")
+        for s in data_strings:
+            addr = s.get("address", "")
+            markdown_lines.append(f"  - `{s.get('value', '')}` @ {addr}")
+    
+    if inline_strings:
+        markdown_lines.append(f"\n💻 **Inline (code)** ({len(inline_strings)}):")
+        for s in inline_strings:
+            func = s.get("in_function", "")
+            markdown_lines.append(f"  - `{s.get('value', '')}` in {func}")
+    
+    markdown_text = "\n".join(markdown_lines)
+    
+    return {
         "query": query,
-        "summary": {
-            "total_matches": result.get("count", 0),
-            "data_section": len(data_strings),
-            "inline_code": len(inline_strings),
-        },
-        "matches": []
+        "count": result.get("count", 0),
+        "markdown": markdown_text,
+        "matches": strings  # Keep raw data for advanced usage
     }
-    
-    # Add data section strings
-    for s in data_strings:
-        formatted["matches"].append({
-            "value": s.get("value", ""),
-            "address": s.get("address", ""),
-            "size": s.get("size", 0),
-            "source": "📦 data",
-        })
-    
-    # Add inline strings
-    for s in inline_strings:
-        formatted["matches"].append({
-            "value": s.get("value", ""),
-            "in_function": s.get("in_function", ""),
-            "size": s.get("size", 0),
-            "source": "💻 inline",
-        })
-    
-    return formatted
 
 
 def tool_list_functions(work_dir: str, job_id: str, query: str | None = None, limit: int = 50) -> dict[str, Any]:
