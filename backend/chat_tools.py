@@ -35,7 +35,7 @@ def tool_search_strings(work_dir: str, job_id: str, query: str, limit: int = 50)
     # Add data section strings
     for s in data_strings:
         formatted["matches"].append({
-            "value": s.get("value", ""),
+            "value": f'`{s.get("value", "")}`',
             "address": s.get("address", ""),
             "size": s.get("size", 0),
             "source": "📦 data",
@@ -44,7 +44,7 @@ def tool_search_strings(work_dir: str, job_id: str, query: str, limit: int = 50)
     # Add inline strings
     for s in inline_strings:
         formatted["matches"].append({
-            "value": s.get("value", ""),
+            "value": f'`{s.get("value", "")}`',
             "in_function": s.get("in_function", ""),
             "size": s.get("size", 0),
             "source": "💻 inline",
